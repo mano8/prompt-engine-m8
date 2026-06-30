@@ -1,0 +1,197 @@
+services:
+  cert-init:
+    image: alpine:3.21.3
+    volumes:
+      - ./traefik/certs:/certs
+    command:
+      - sh
+      - -c
+      - |
+        if [ -f /certs/local.crt ]; then
+          echo "==> cert-init: certs found, skipping"; exit 0
+        fi
+        apk add --no-cache --quiet openssl
+        openssl req -x509 -newkey rsa:2048 -nodes \
+          -keyout /certs/local.key -out /certs/local.crt \
+          -days 365 -subj "/CN=localhost" \
+          -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+        chmod 600 /certs/local.key && chmod 644 /certs/local.crt
+        echo "==> cert-init: self-signed cert ready"
+    restart: "no"
+
+  traefik:
+    image: traefik:v3.7.5
+    ports:
+      - "8000:80"
+      - "4430:443/tcp"
+      - "4430:443/udp"
+      - "127.0.0.1:8080:8080"
+      - "${API_BIND_IP:-127.0.0.1}:9000:9000"
+    volumes:
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic_conf.yml:/etc/traefik/dynamic_conf.yml:ro
+      - ./traefik/certs:/etc/traefik/certs:ro
+    depends_on:
+      cert-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks:
+      - app_net
+
+  m8_db:
+    image: postgres:18.4-alpine
+    volumes:
+      - ./db_data:/var/lib/postgresql
+      - ../shared/db_init:/docker-entrypoint-initdb.d:ro
+    env_file:
+      - ./.env
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - PGPORT=${DB_PORT}
+    ports:
+      - "127.0.0.1:${DB_PORT}:${DB_PORT}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p ${DB_PORT} -U ${DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 180s
+      start_interval: 2s
+    restart: unless-stopped
+    networks:
+      - data_net
+
+  redis_cache:
+    image: redis:8.8.0-alpine
+    volumes:
+      - ./redis/redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    command:
+      - sh
+      - -c
+      - |
+        redis-server --save 20 1 --loglevel warning --requirepass "$${REDIS_PASSWORD}" &
+        until redis-cli ping 2>/dev/null | grep -q PONG; do sleep 0.2; done
+        redis-cli ACL SETUSER auth on \>"$${REDIS_PASSWORD}" "~oauth_session:*" "~auth_code:*" "~login:*" "~refresh:*" "~exchange:*" "~rt:*" "~jwt:blacklist:*" "~rate:*" "~api_key:*" +@read +@write +@transaction +@connection +eval -@dangerous "+client|setinfo"
+        redis-cli ACL SETUSER default on \>"$${REDIS_PASSWORD}" resetkeys -@all +@connection -@dangerous
+        wait
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDISCLI_AUTH=${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - data_net
+
+  prometheus:
+    image: ubuntu/prometheus:3.11-26.04_stable
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./prometheus/data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - app_net
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.1.0-25530058790
+    depends_on:
+      - prometheus
+    env_file:
+      - ./grafana.env
+    volumes:
+      - ./grafana/data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - app_net
+    restart: unless-stopped
+
+  auth_user_service:
+    image: tepochtli/fa-auth-m8:1.0.0
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+    env_file:
+      - ./auth.env
+    volumes:
+      - ./auth.env:/opt/auth_user_service/.env:ro
+      - ./shared_migrations:/opt/shared_migrations
+      - ./keys:/opt/keys:ro
+    depends_on:
+      m8_db:
+        condition: service_healthy
+      redis_cache:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app_net
+      - data_net
+
+  prompt_engine_service:
+    build:
+      context: ../../
+      dockerfile: ./promt_engine_service/Dockerfile
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+    env_file:
+      - ./prompt.env
+    volumes:
+      - ../../promt_engine_service:/opt/promt_engine_service
+      - ./prompt.env:/opt/promt_engine_service/.env:ro
+      - ./shared_migrations:/opt/shared_migrations
+    depends_on:
+      m8_db:
+        condition: service_healthy
+      auth_user_service:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - app_net
+      - data_net
+
+networks:
+  app_net:
+    driver: bridge
+    name: prompt_engine_m8_app_net
+    ipam:
+      config:
+        - subnet: 172.16.0.0/16
+          gateway: 172.16.0.1
+  data_net:
+    driver: bridge
+    internal: true

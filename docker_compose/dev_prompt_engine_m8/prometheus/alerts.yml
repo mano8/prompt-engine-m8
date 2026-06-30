@@ -1,0 +1,35 @@
+groups:
+  - name: prompt_engine_service_health
+    rules:
+      - alert: PromptEngineServiceDown
+        expr: up{job="prompt_engine_service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prompt engine service Prometheus target is down"
+          description: "Prometheus cannot scrape prompt_engine_service at /prompt/metrics."
+
+      - alert: PromptEngineServiceHighErrorRatio
+        expr: |
+          sum(rate(prompt_http_errors_total[5m]))
+          /
+          clamp_min(sum(rate(prompt_http_requests_total[5m])), 1)
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prompt engine HTTP error ratio above 5%"
+          description: "More than 5% of prompt_engine_service requests are returning 4xx/5xx responses."
+
+  - name: auth_user_service_health
+    rules:
+      - alert: AuthUserServiceDown
+        expr: up{job="auth_user_service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Auth user service Prometheus target is down"
+          description: "Prometheus cannot scrape auth_user_service at /user/metrics."

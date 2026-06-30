@@ -1,0 +1,105 @@
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12
+      cipherSuites:
+        - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+        - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+      curvePreferences:
+        - X25519
+        - CurveP256
+  stores:
+    default:
+      defaultCertificate:
+        certFile: "/etc/traefik/certs/local.crt"
+        keyFile: "/etc/traefik/certs/local.key"
+  certificates:
+    - certFile: "/etc/traefik/certs/local.crt"
+      keyFile: "/etc/traefik/certs/local.key"
+
+http:
+  routers:
+    traefik-dashboard:
+      entryPoints:
+        - traefik
+      rule: "Host(`localhost`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"
+      service: api@internal
+      middlewares:
+        - ip-allowlist
+      tls: {}
+
+    auth-public-router:
+      entryPoints:
+        - websecure
+      rule: "Host(`localhost`) && PathPrefix(`/user`) && !(PathPrefix(`/user/metrics`) || PathPrefix(`/user/private`))"
+      service: auth-service
+      middlewares:
+        - security-headers
+      tls: {}
+      priority: 2
+
+    auth-internal-router:
+      entryPoints:
+        - api
+      rule: "PathPrefix(`/user`)"
+      service: auth-service
+      middlewares:
+        - security-headers
+        - internal-only
+
+    prompt-public-router:
+      entryPoints:
+        - websecure
+      rule: "Host(`localhost`) && PathPrefix(`/prompt`) && !PathPrefix(`/prompt/metrics`)"
+      service: prompt-engine-service
+      middlewares:
+        - security-headers
+      tls: {}
+
+    prompt-internal-router:
+      entryPoints:
+        - api
+      rule: "PathPrefix(`/prompt`)"
+      service: prompt-engine-service
+      middlewares:
+        - security-headers
+        - internal-only
+
+  services:
+    auth-service:
+      loadBalancer:
+        servers:
+          - url: "http://auth_user_service:8000"
+    prompt-engine-service:
+      loadBalancer:
+        servers:
+          - url: "http://prompt_engine_service:8000"
+
+  middlewares:
+    ip-allowlist:
+      IPAllowList:
+        sourceRange:
+          - "127.0.0.1/32"
+          - "172.16.0.1/32"
+          - "::1/128"
+
+    internal-only:
+      IPAllowList:
+        sourceRange:
+          - "127.0.0.1/32"
+          - "172.16.0.0/16"
+          - "::1/128"
+
+    security-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        customResponseHeaders:
+          X-Robots-Tag: "noindex,nofollow"
+          Server: ""
