@@ -25,7 +25,7 @@ FROM python:3.14-slim@sha256:c845af9399020c7e562969a13689e929074a10fd057acd1b1fa
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/home/appuser/.local/bin:$PATH"
-ENV PYTHONPATH=/opt/promt_engine_service
+ENV PYTHONPATH=/opt:/opt/promt_engine_service
 
 RUN groupadd --gid 1000 appuser && \
     useradd --uid 1000 --gid appuser --create-home appuser

@@ -4,7 +4,7 @@ from typing import List
 import uuid
 
 from pydantic import SecretStr, model_validator
-from sqlalchemy import Column, UniqueConstraint
+from sqlalchemy import UniqueConstraint
 from slugify import slugify
 from sqlmodel import Column, Field, SQLModel
 

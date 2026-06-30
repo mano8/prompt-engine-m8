@@ -2,7 +2,7 @@
 set -e
 set -x
 
-export PYTHONPATH=/opt/promt_engine_service
+export PYTHONPATH=/opt:/opt/promt_engine_service
 
 echo "Current working directory: $(pwd)"
 

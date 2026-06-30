@@ -3,7 +3,10 @@ Dashboard Controller
 """
 
 from datetime import datetime, timedelta
+from typing import Any, Protocol, cast
+
 from sqlalchemy import case, and_
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlmodel import Session, select, func
 from auth_sdk_m8.controllers.base import BaseController
 from promt_engine_service.core.deps import CurrentUser
@@ -16,6 +19,12 @@ from promt_engine_service.db_models.categories import Category
 from promt_engine_service.db_models.ia_providers import LLMProvider
 from promt_engine_service.db_models.prompts import PromptBlock, PromptTemplate
 # pylint: disable=broad-exception-caught
+
+
+class ActivityModel(Protocol):
+    updated_at: InstrumentedAttribute[Any]
+    created_at: InstrumentedAttribute[Any]
+    owner_id: InstrumentedAttribute[Any]
 
 
 class DashboardController:
@@ -94,11 +103,11 @@ class DashboardController:
         start, end = DashboardController.get_range_activity(time_range)
 
         # list of tuples: (model, model name)
-        models = [
-            (Category, "Category"),
-            (PromptBlock, "PromptBlock"),
-            (PromptTemplate, "PromptTemplate"),
-            (LLMProvider, "LLMProvider"),
+        models: list[tuple[type[ActivityModel], str]] = [
+            (cast(type[ActivityModel], Category), "Category"),
+            (cast(type[ActivityModel], PromptBlock), "PromptBlock"),
+            (cast(type[ActivityModel], PromptTemplate), "PromptTemplate"),
+            (cast(type[ActivityModel], LLMProvider), "LLMProvider"),
         ]
         result: ActivityStats = {"max": 0, "min": 0, "activity": []}
         for model, model_name in models:
@@ -117,10 +126,7 @@ class DashboardController:
                 ).label("added"),
             ).select_from(model)
             if not current_user.is_superuser or is_current is True:
-                if model_name == "User":
-                    stmt = stmt.where(model.id == current_user.id)
-                else:
-                    stmt = stmt.where(model.owner_id == current_user.id)
+                stmt = stmt.where(model.owner_id == current_user.id)
             row = session.exec(stmt).first()
             updated_count: int = (
                 int(row.updated) if row and row.updated is not None else 0  # type: ignore[attr-defined]

@@ -1,6 +1,6 @@
 """Prompt template routes."""
 
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, cast
 
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.orm import selectinload
@@ -11,7 +11,11 @@ from auth_sdk_m8.schemas.base import ResponseMessage, ResponseModelBase
 from promt_engine_service.app.deps import CurrentUser, SessionDep
 from promt_engine_service.controllers.prompts import PromptsController
 from promt_engine_service.db_models.prompts import PromptTemplate, TemplateBlock
-from promt_engine_service.schemas.prompts import DynamicBlock, PromptTemplateModel, PromptTemplatesList
+from promt_engine_service.schemas.prompts import (
+    DynamicBlock,
+    PromptTemplateModel,
+    PromptTemplatesList,
+)
 
 router = APIRouter(prefix="/prompt-template", tags=["prompt-template"])
 # pylint: disable=not-callable,broad-exception-caught
@@ -32,14 +36,20 @@ def prompt_template_list(
     try:
         statement = (
             select(PromptTemplate)
-            .options(selectinload(PromptTemplate.blocks).selectinload(TemplateBlock.block))
+            .options(
+                selectinload(cast(Any, PromptTemplate.blocks)).selectinload(
+                    cast(Any, TemplateBlock.block)
+                )
+            )
             .offset(skip)
             .limit(limit)
         )
         count_statement = select(func.count()).select_from(PromptTemplate)
         if not current_user.is_superuser:
             statement = statement.where(PromptTemplate.owner_id == current_user.id)
-            count_statement = count_statement.where(PromptTemplate.owner_id == current_user.id)
+            count_statement = count_statement.where(
+                PromptTemplate.owner_id == current_user.id
+            )
         items = session.exec(statement).all()
         return PromptTemplatesList(
             count=session.exec(count_statement).one(),
@@ -54,11 +64,17 @@ def prompt_template_list(
     response_model=Union[ResponseModelBase, ResponseMessage],
     responses=BaseController.get_error_responses(),
 )
-def get_prompt_template(session: SessionDep, current_user: CurrentUser, item_id: int) -> Any:
+def get_prompt_template(
+    session: SessionDep, current_user: CurrentUser, item_id: int
+) -> Any:
     """Get a prompt template by ID."""
     try:
-        template = PromptsController.get_template_for_user(session, current_user, item_id)
-        return ResponseModelBase(success=True, data=PromptsController.dump_prompt_template(template))
+        template = PromptsController.get_template_for_user(
+            session, current_user, item_id
+        )
+        return ResponseModelBase(
+            success=True, data=PromptsController.dump_prompt_template(template)
+        )
     except HTTPException:
         raise
     except Exception as ex:
@@ -80,14 +96,20 @@ def get_prompt_template_by_slug(
         statement = (
             select(PromptTemplate)
             .where(PromptTemplate.slug == item_slug)
-            .options(selectinload(PromptTemplate.blocks).selectinload(TemplateBlock.block))
+            .options(
+                selectinload(cast(Any, PromptTemplate.blocks)).selectinload(
+                    cast(Any, TemplateBlock.block)
+                )
+            )
         )
         if not current_user.is_superuser:
             statement = statement.where(PromptTemplate.owner_id == current_user.id)
         template = session.exec(statement).first()
         if template is None:
             return ResponseMessage(success=False, msg="Item not found.")
-        return ResponseModelBase(success=True, data=PromptsController.dump_prompt_template(template))
+        return ResponseModelBase(
+            success=True, data=PromptsController.dump_prompt_template(template)
+        )
     except Exception as ex:
         return BaseController.handle_exception(ex=ex, session=session)
 
@@ -97,13 +119,19 @@ def get_prompt_template_by_slug(
     response_model=Union[ResponseModelBase, ResponseMessage],
     responses=BaseController.get_error_responses(),
 )
-def get_prompt_template_blocks(session: SessionDep, current_user: CurrentUser, item_id: int) -> Any:
+def get_prompt_template_blocks(
+    session: SessionDep, current_user: CurrentUser, item_id: int
+) -> Any:
     """Get ordered blocks for a prompt template."""
     try:
-        template = PromptsController.get_template_for_user(session, current_user, item_id)
+        template = PromptsController.get_template_for_user(
+            session, current_user, item_id
+        )
         if not template.blocks:
             return ResponseMessage(success=False, msg="Empty template blocks!")
-        return ResponseModelBase(success=True, data=PromptsController.dump_template_blocks(template.blocks))
+        return ResponseModelBase(
+            success=True, data=PromptsController.dump_template_blocks(template.blocks)
+        )
     except HTTPException:
         raise
     except Exception as ex:
@@ -123,7 +151,9 @@ def compose_prompt_template(
 ) -> Any:
     """Compose a prompt template into a deterministic prompt string."""
     try:
-        template = PromptsController.get_template_for_user(session, current_user, item_id)
+        template = PromptsController.get_template_for_user(
+            session, current_user, item_id
+        )
         content = PromptsController.compose_prompt_content(
             template=template,
             dynamic_content=dynamic_content,
@@ -190,10 +220,14 @@ def update_prompt_template(
     response_model=ResponseMessage,
     responses=BaseController.get_error_responses(),
 )
-def delete_prompt_template(session: SessionDep, current_user: CurrentUser, item_id: int) -> ResponseMessage:
+def delete_prompt_template(
+    session: SessionDep, current_user: CurrentUser, item_id: int
+) -> ResponseMessage:
     """Delete a prompt template."""
     try:
-        template = PromptsController.get_template_for_user(session, current_user, item_id)
+        template = PromptsController.get_template_for_user(
+            session, current_user, item_id
+        )
         for template_block in list(template.blocks):
             session.delete(template_block)
         session.flush()

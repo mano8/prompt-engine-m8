@@ -3,14 +3,24 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
-from promt_engine_service.db_models.prompts import PromptBlock, PromptTemplate, TemplateBlock
-from promt_engine_service.schemas.prompts import DynamicBlock, PromptBlockModel, PromptTemplateModel
+from promt_engine_service.db_models.prompts import (
+    PromptBlock,
+    PromptTemplate,
+    TemplateBlock,
+)
+from promt_engine_service.schemas.prompts import (
+    DynamicBlock,
+    PromptBlockModel,
+    TemplateBlockDict,
+    PromptTemplateDict,
+    PromptTemplateModel,
+)
 
 
 class PromptsController:
@@ -18,7 +28,9 @@ class PromptsController:
 
     @staticmethod
     def _owns(record: Any, current_user: Any) -> bool:
-        return bool(getattr(current_user, "is_superuser", False)) or str(record.owner_id) == str(current_user.id)
+        return bool(getattr(current_user, "is_superuser", False)) or str(
+            record.owner_id
+        ) == str(current_user.id)
 
     @staticmethod
     def _require_owner(record: Any, current_user: Any) -> None:
@@ -29,34 +41,51 @@ class PromptsController:
             )
 
     @staticmethod
-    def get_block_for_user(session: Session, current_user: Any, block_id: int) -> PromptBlock:
+    def get_block_for_user(
+        session: Session, current_user: Any, block_id: int
+    ) -> PromptBlock:
         """Load a prompt block and enforce ownership."""
         block = session.get(PromptBlock, block_id)
         if block is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prompt block not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Prompt block not found"
+            )
         PromptsController._require_owner(block, current_user)
         return block
 
     @staticmethod
-    def get_template_for_user(session: Session, current_user: Any, template_id: int) -> PromptTemplate:
+    def get_template_for_user(
+        session: Session, current_user: Any, template_id: int
+    ) -> PromptTemplate:
         """Load a prompt template with blocks and enforce ownership."""
         template = session.exec(
             select(PromptTemplate)
             .where(PromptTemplate.id == template_id)
-            .options(selectinload(PromptTemplate.blocks).selectinload(TemplateBlock.block))
+            .options(
+                selectinload(cast(Any, PromptTemplate.blocks)).selectinload(
+                    cast(Any, TemplateBlock.block)
+                )
+            )
         ).first()
         if template is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prompt template not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Prompt template not found",
+            )
         PromptsController._require_owner(template, current_user)
         return template
 
     @staticmethod
-    def dump_prompt_templates(templates: Iterable[PromptTemplate]) -> list[dict[str, Any]]:
+    def dump_prompt_templates(
+        templates: Iterable[PromptTemplate],
+    ) -> list[PromptTemplateDict]:
         """Serialize prompt templates."""
-        return [PromptsController.dump_prompt_template(template) for template in templates]
+        return [
+            PromptsController.dump_prompt_template(template) for template in templates
+        ]
 
     @staticmethod
-    def dump_prompt_template(template: PromptTemplate) -> dict[str, Any]:
+    def dump_prompt_template(template: PromptTemplate) -> PromptTemplateDict:
         """Serialize a prompt template with ordered blocks."""
         return {
             "id": template.id,
@@ -68,7 +97,9 @@ class PromptsController:
         }
 
     @staticmethod
-    def dump_template_blocks(blocks: Iterable[TemplateBlock]) -> list[dict[str, Any]]:
+    def dump_template_blocks(
+        blocks: Iterable[TemplateBlock],
+    ) -> list[TemplateBlockDict]:
         """Serialize template blocks in stable position order."""
         return [
             PromptsController.dump_template_block(block)
@@ -76,7 +107,7 @@ class PromptsController:
         ]
 
     @staticmethod
-    def dump_template_block(block: TemplateBlock) -> dict[str, Any]:
+    def dump_template_block(block: TemplateBlock) -> TemplateBlockDict:
         """Serialize a template-block join without leaking unrelated owner data."""
         return {
             "id": block.id,
@@ -115,7 +146,9 @@ class PromptsController:
         return "\n\n".join(contents)
 
     @staticmethod
-    def create_prompt_block(*, session: Session, current_user: Any, item_in: PromptBlockModel) -> PromptBlock:
+    def create_prompt_block(
+        *, session: Session, current_user: Any, item_in: PromptBlockModel
+    ) -> PromptBlock:
         """Create a prompt block owned by the current user."""
         block = PromptBlock.model_validate(
             item_in.model_dump(),
@@ -168,7 +201,9 @@ class PromptsController:
         item_in: PromptTemplateModel,
     ) -> PromptTemplate:
         """Update a prompt template after ownership validation."""
-        template = PromptsController.get_template_for_user(session, current_user, item_id)
+        template = PromptsController.get_template_for_user(
+            session, current_user, item_id
+        )
         template.sqlmodel_update(item_in.model_dump(exclude_unset=True))
         session.add(template)
         session.commit()
@@ -185,11 +220,16 @@ class PromptsController:
         position: int = 0,
     ) -> TemplateBlock:
         """Add a block to a template and keep positions contiguous."""
-        template = PromptsController.get_template_for_user(session, current_user, template_id)
+        template = PromptsController.get_template_for_user(
+            session, current_user, template_id
+        )
         block = PromptsController.get_block_for_user(session, current_user, block_id)
 
         if any(item.block_id == block.id for item in template.blocks):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Block already exists in template")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Block already exists in template",
+            )
 
         ordered_blocks = sorted(template.blocks, key=lambda item: item.position)
         if position <= 0 or position > len(ordered_blocks) + 1:
@@ -201,7 +241,9 @@ class PromptsController:
                 session.add(item)
                 session.flush()
 
-        template_block = TemplateBlock(template_id=template.id, block_id=block.id, position=position)
+        template_block = TemplateBlock(
+            template_id=template.id, block_id=block.id, position=position
+        )
         session.add(template_block)
         session.commit()
         session.refresh(template_block)
@@ -217,16 +259,29 @@ class PromptsController:
         new_position: int,
     ) -> TemplateBlock:
         """Move a template block and normalize all positions."""
-        template = PromptsController.get_template_for_user(session, current_user, template_id)
+        template = PromptsController.get_template_for_user(
+            session, current_user, template_id
+        )
         blocks = sorted(template.blocks, key=lambda item: item.position)
-        current_block = next((item for item in blocks if item.block_id == block_id), None)
+        current_block = next(
+            (item for item in blocks if item.block_id == block_id), None
+        )
         if current_block is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Block not found in template")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Block not found in template",
+            )
         if new_position < 1 or new_position > len(blocks):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid position")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid position"
+            )
 
         blocks.remove(current_block)
         blocks.insert(new_position - 1, current_block)
+        for index, item in enumerate(blocks, start=1):
+            item.position = -index
+            session.add(item)
+        session.flush()
         for index, item in enumerate(blocks, start=1):
             item.position = index
             session.add(item)
@@ -243,10 +298,17 @@ class PromptsController:
         block_id: int,
     ) -> None:
         """Remove a block from a template and normalize positions."""
-        template = PromptsController.get_template_for_user(session, current_user, template_id)
-        block_to_remove = next((item for item in template.blocks if item.block_id == block_id), None)
+        template = PromptsController.get_template_for_user(
+            session, current_user, template_id
+        )
+        block_to_remove = next(
+            (item for item in template.blocks if item.block_id == block_id), None
+        )
         if block_to_remove is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Block not found in template")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Block not found in template",
+            )
 
         session.delete(block_to_remove)
         session.flush()
