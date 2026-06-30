@@ -1,4 +1,4 @@
-name: CI Matrix
+name: Quality Gates
 
 on:
   push:
@@ -83,6 +83,19 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
           format: table
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@v2.3.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
   test:
     runs-on: ubuntu-latest
