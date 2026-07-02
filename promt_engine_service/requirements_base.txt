@@ -15,7 +15,7 @@ bcrypt>=5.0.0
 python-multipart>=0.0.30
 itsdangerous>=2.2.0
 
-redis>=8.0.0
+redis>=8.0.1
 
 python-slugify>=8.0.4
 
