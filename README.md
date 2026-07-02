@@ -27,6 +27,7 @@ The repository includes a Docker Compose development stack with Traefik,
 - [Architecture](#architecture)
 - [Docker Compose Stack](#docker-compose-stack)
 - [API Endpoints](#api-endpoints)
+- [Dynamic Block Composition](#dynamic-block-composition)
 - [Quick Start](#quick-start)
 - [Environment Variables](#environment-variables)
 - [Security Defaults](#security-defaults)
@@ -153,6 +154,47 @@ http://localhost:9000/prompt/docs
 ```
 
 when `SET_DOCS=true`.
+
+---
+
+## Dynamic Block Composition
+
+Prompt templates are composed from ordered static and dynamic blocks. Static
+blocks render their stored `content` exactly as authored. Dynamic blocks can use
+the placeholder token `{{dynamic_content}}` inside their stored `content` to mark
+where the runtime replacement value should be inserted.
+
+Example dynamic block content:
+
+```text
+Use this source text:
+{{dynamic_content}}
+Return only bullets.
+```
+
+Compose payload:
+
+```json
+[
+  { "id": 2, "content": "Summarize the release notes." }
+]
+```
+
+Rendered dynamic block:
+
+```text
+Use this source text:
+Summarize the release notes.
+Return only bullets.
+```
+
+The payload item `id` is the prompt block ID and `content` is the runtime
+replacement value. If a dynamic block does not contain `{{dynamic_content}}`, the
+service keeps the current compatibility path and renders the replacement value
+as the whole dynamic block. New dynamic blocks should include the placeholder so
+authored surrounding text is preserved. Static blocks do not interpret
+`{{dynamic_content}}`; if the token appears in static content, it is rendered
+literally.
 
 ---
 

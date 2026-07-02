@@ -50,6 +50,7 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
+bandit-report.json
 
 # Translations
 *.mo

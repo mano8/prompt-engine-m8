@@ -7,7 +7,11 @@ import uuid
 import pytest
 from fastapi import HTTPException
 
-from promt_engine_service.controllers.prompts import PromptsController, PromtsController
+from promt_engine_service.controllers.prompts import (
+    DYNAMIC_CONTENT_PLACEHOLDER,
+    PromptsController,
+    PromtsController,
+)
 from promt_engine_service.core.db_models import UUIDString, prefixed_fk, prefixed_tables
 from promt_engine_service.db_models.prompts import (
     PromptBlock,
@@ -204,6 +208,78 @@ def test_template_serialization_composition_and_reorder(session, owner) -> None:
     )
     session.refresh(template)
     assert [item.position for item in template.blocks] == [1, 2]
+
+
+def test_dynamic_placeholder_composition_contract(session, owner) -> None:
+    static = PromptBlock(
+        id=1,
+        name="Static",
+        slug="static",
+        content=f"Static keeps {DYNAMIC_CONTENT_PLACEHOLDER}",
+        type=PromptBlockType.ROLE,
+        owner_id=owner.id,
+    )
+    dynamic = PromptBlock(
+        id=2,
+        name="Dynamic",
+        slug="dynamic",
+        content=(
+            f"Question:\n{DYNAMIC_CONTENT_PLACEHOLDER}\n"
+            f"Repeat: {DYNAMIC_CONTENT_PLACEHOLDER}"
+        ),
+        type=PromptBlockType.TASK,
+        is_dynamic=True,
+        owner_id=owner.id,
+    )
+    legacy_dynamic = PromptBlock(
+        id=3,
+        name="Legacy dynamic",
+        slug="legacy-dynamic",
+        content="Stored legacy content",
+        type=PromptBlockType.CONTEXT,
+        is_dynamic=True,
+        owner_id=owner.id,
+    )
+    template = PromptTemplate(
+        name="Tpl",
+        slug="tpl",
+        blocks=[
+            TemplateBlock(
+                id=1,
+                block_id=static.id,
+                template_id=1,
+                position=1,
+                block=static,
+            ),
+            TemplateBlock(
+                id=2,
+                block_id=dynamic.id,
+                template_id=1,
+                position=2,
+                block=dynamic,
+            ),
+            TemplateBlock(
+                id=3,
+                block_id=legacy_dynamic.id,
+                template_id=1,
+                position=3,
+                block=legacy_dynamic,
+            ),
+        ],
+        owner_id=owner.id,
+    )
+
+    assert PromptsController.compose_prompt_content(
+        template,
+        [
+            DynamicBlock(id=dynamic.id, content="Summarize this\u200b"),
+            DynamicBlock(id=legacy_dynamic.id, content="Legacy replacement"),
+        ],
+    ) == (
+        f"Static keeps {DYNAMIC_CONTENT_PLACEHOLDER}\n\n"
+        "Question:\nSummarize this\nRepeat: Summarize this\n\n"
+        "Legacy replacement"
+    )
 
 
 def test_template_controller_error_branches(session, owner) -> None:
