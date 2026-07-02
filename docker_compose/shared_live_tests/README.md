@@ -1,33 +1,46 @@
-# Shared live security test (media-service hardened reference)
+# Shared live security test (prompt-engine stack)
 
-This example runs the full `security-tests-m8` live security suite against the `media-service-m8` hardened Docker Compose stack.
+This example runs the `security-tests-m8` live security suite against a
+`prompt-engine-m8` Docker Compose stack.
 
-> **Reusable, not hardened-only.** This is the *shared* live test: the same
+> **Reusable, not stack-specific.** This is the *shared* live test: the same
 > folder runs against **any compose stack that uses `fa-auth-m8` as the issuer
-> and `fastapi-m8`-based consumers** (here, `media-service-m8`). Only the
-> configuration in `.env` changes — see
-> [Adapting To Another Stack](#adapting-to-another-stack). `hardened_media_m8`
-> is the reference target documented below.
+> and `fastapi-m8`-based consumers**. Only the configuration in `.env` changes —
+> see [Adapting To Another Stack](#adapting-to-another-stack). The default target
+> documented below is the combined dev stack
+> [`../dev_local_prompt_m8`](../dev_local_prompt_m8) (which runs
+> `prompt_engine_service` alongside the auth issuer and media services); the lean
+> [`../dev_prompt_engine_m8`](../dev_prompt_engine_m8) stack works too.
 
-- Tested compose stack on GitHub: [`mano8/media-service-m8/docker_compose/hardened_media_m8`](https://github.com/mano8/media-service-m8/tree/main/docker_compose/hardened_media_m8)
-- Local compose stack path: `/workspace/media-service-m8/docker_compose/hardened_media_m8`
-- Local live-test example folder: `/workspace/media-service-m8/docker_compose/shared_live_tests`
+- Local compose stack path: `/workspace/prompt-engine-m8/docker_compose/dev_local_prompt_m8`
+- Local live-test example folder: `/workspace/prompt-engine-m8/docker_compose/shared_live_tests`
 - Canonical package example: [`mano8/security-tests-m8/examples/hardened_m8_full_security`](https://github.com/mano8/security-tests-m8/tree/main/examples/hardened_m8_full_security)
 
-It is built for the default hardened stack routes:
+It is built for this stack's default routes:
 
 - auth service: `http://localhost:9000/user`
-- downstream media service: `http://localhost:9000/media` (media-service `API_PREFIX=/media`)
+- prompt-engine consumer: `http://localhost:9000/prompt` (prompt `API_PREFIX=/prompt`)
 - public HTTPS entrypoint: `https://localhost:4430`
-- stack root and JWT keys: `/workspace/media-service-m8/docker_compose/hardened_media_m8`
+- stack root and JWT keys: `/workspace/prompt-engine-m8/docker_compose/dev_local_prompt_m8`
 
-The live tests require a dedicated test-only superuser. Do not use `FIRST_SUPERUSER` / `FIRST_SUPERUSER_PASSWORD` from `auth.env`; the package preflight refuses that by default.
+The live tests require a dedicated test-only superuser. Do not use
+`FIRST_SUPERUSER` / `FIRST_SUPERUSER_PASSWORD` from `auth.env`; the package
+preflight refuses that by default.
 
-CLI mode is recommended for normal users and excludes destructive tests by default. This local pytest example is for custom tests, extra marker selection, and local suite extension. The unknown-route information-disclosure test now lives in the package full suite and no longer needs to be copied into this folder.
+CLI mode is recommended for normal users and excludes destructive tests by
+default. This local pytest example is for custom tests, extra marker selection,
+and local suite extension.
 
 ## Why run live security tests
 
-Unit and contract tests verify code in isolation. They cannot prove that a *running, fully wired* stack — auth issuer, downstream consumers, Traefik, Redis, JWT keys — actually rejects a forged token, an `alg=none` JWT, an HS256 token signed with the public key, an unauthenticated call to a protected route, or a privilege-escalation attempt. Those failures only surface end-to-end. `security-tests-m8` drives the live HTTP surface the way an attacker would and asserts the stack fails closed. It covers the OWASP API Top 10 categories plus M8-specific JWT/JWKS/cross-service checks.
+Unit and contract tests verify code in isolation. They cannot prove that a
+*running, fully wired* stack — auth issuer, downstream consumers, Traefik, Redis,
+JWT keys — actually rejects a forged token, an `alg=none` JWT, an HS256 token
+signed with the public key, an unauthenticated call to a protected route, or a
+privilege-escalation attempt. Those failures only surface end-to-end.
+`security-tests-m8` drives the live HTTP surface the way an attacker would and
+asserts the stack fails closed. It covers the OWASP API Top 10 categories plus
+M8-specific JWT/JWKS/cross-service checks.
 
 **When to run it:**
 
@@ -46,7 +59,10 @@ Unit and contract tests verify code in isolation. They cannot prove that a *runn
 | Command | `security-tests-m8 run --env-file test.env` | `pytest` |
 | Destructive tests | Excluded unless `--include-destructive` | Selected via markers |
 
-CLI mode needs nothing from this folder — you install the package and point it at a stack's `test.env`. Use **this folder** only when you want to add local tests, select specific markers, or extend the suite. Both share the same underlying package, so coverage is identical for the checks that apply to your stack.
+CLI mode needs nothing from this folder — you install the package and point it at
+a stack's `test.env`. Use **this folder** only when you want to add local tests,
+select specific markers, or extend the suite. Both share the same underlying
+package, so coverage is identical for the checks that apply to your stack.
 
 ## What It Runs
 
@@ -56,32 +72,29 @@ The example includes:
 - stateful/stateless/hybrid contract suites
 - RS256/JWKS/cross-service JWT suites
 - HS256 rejection and weak-key suites
-- protected-endpoint checks for the media-service read endpoints, configured via
-  `LIVE_TEST_PROTECTED_ENDPOINTS` (all paths are relative to `/media`):
+- protected-endpoint checks for the prompt-engine read endpoints, configured via
+  `LIVE_TEST_PROTECTED_ENDPOINTS` (all paths are relative to `/prompt`):
   - `/category/`
   - `/dashboard/users/activity/`
   - `/dashboard/users/activity/current/`
-  - `/v1/objects`
-  - `/v1/presets`
-  - `/v1/admin/storage/stats`
-  - `/v1/admin/uploads/stale`
-  - `/v1/admin/maintenance/orphans`
-  - `/v1/admin/subscriptions`
+  - `/prompt-block/`
+  - `/prompt-template/`
 
 Each configured endpoint is checked for: no token → `401`/`403`, an invalid
 bearer token → `401`/`403`, and the dedicated admin token → `200`. Only
 authenticated `GET` endpoints with no required path parameters are listed;
-resource-scoped routes (for example `/v1/objects/{object_id}` or
-`/v1/admin/quotas/{owner_user_id}`) and mutating routes (`uploads`, `variants`,
-`shares`) are not covered by the generic suite. Add them in your own subclass if
-you need them.
+resource-scoped routes (for example `/category/get/{item_id}/` or
+`/prompt-template/get_by_slug/{item_slug}/`) and mutating routes (`/add/`,
+`/edit/{item_id}/`) are not covered by the generic suite. Add them in your own
+subclass if you need them.
 
-The hardened stack is RS256 and stateful, so pytest automatically skips suites that do not apply to that detected stack.
+The stack is RS256 and stateful, so pytest automatically skips suites that do not
+apply to that detected stack.
 
 ## Files
 
 ```text
-examples/docker_compose/shared_live_tests/
+docker_compose/shared_live_tests/
 ├── env.example
 ├── pytest.ini
 ├── README.md
@@ -90,39 +103,56 @@ examples/docker_compose/shared_live_tests/
     └── test_full_security.py
 ```
 
-## Start The Hardened Stack
+## Start The Stack
 
-From the hardened stack directory:
+From the stack directory:
 
 ```bash
-cd /workspace/media-service-m8/docker_compose/hardened_media_m8
+cd /workspace/prompt-engine-m8/docker_compose/dev_local_prompt_m8
 cp .env.example .env
 cp auth.env.example auth.env
 cp media.env.example media.env
+cp worker.env.example worker.env
+cp prompt.env.example prompt.env
+cp grafana.env.example grafana.env
 cp test.env.example test.env   # live-test runner config (edit before running tests)
 bash init.sh
 docker compose up -d
 ```
 
-`test.env` is not needed to boot the stack — it configures the `security-tests-m8`
-run below. Copy it now so everything is in place, then edit it (dedicated test
-superuser, opt-in secrets) before you run the suite.
+`test.env` is not needed to boot the stack — it configures the
+`security-tests-m8` run below. Copy it now so everything is in place, then edit
+it (dedicated test superuser, opt-in secrets) before you run the suite.
 
 ### Dedicated test superuser
 
-The suite needs superuser credentials because it exercises admin-only paths — creating users, listing accounts, deleting other users, issuing API keys. You must give it a **dedicated, test-only superuser**, not your real admin and not the stack's bootstrap `FIRST_SUPERUSER`:
+The suite needs superuser credentials because it exercises admin-only paths. You
+must give it a **dedicated, test-only superuser**, not your real admin and not
+the stack's bootstrap `FIRST_SUPERUSER`:
 
-- The preflight **refuses** to run as `FIRST_SUPERUSER` (`LIVE_TEST_FORBID_BOOTSTRAP_SUPERUSER=true`). Reusing the bootstrap account risks locking out or corrupting the identity your stack depends on.
-- During a run the suite also creates one throwaway `redteam_*@redteam-test.com` regular user to attempt privilege escalation. The suite **deletes that user automatically at the end of the test session** (best-effort, through the admin account), so a run leaves no standing test identity behind.
+- The preflight **refuses** to run as `FIRST_SUPERUSER`
+  (`LIVE_TEST_FORBID_BOOTSTRAP_SUPERUSER=true`). Reusing the bootstrap account
+  risks locking out or corrupting the identity your stack depends on.
+- During a run the suite also creates one throwaway
+  `redteam_*@redteam-test.com` regular user to attempt privilege escalation. The
+  suite **deletes that user automatically at the end of the test session**
+  (best-effort, through the admin account), so a run leaves no standing test
+  identity behind.
 
-Create the dedicated account first (it must already exist in the auth stack and have superuser permissions), then point the live-test env file at it:
+Create the dedicated account first (it must already exist in the auth stack and
+have superuser permissions), then point the live-test env file at it:
 
 ```ini
 LIVE_TEST_ADMIN_EMAIL=tester@example.com
 LIVE_TEST_ADMIN_PASSWORD=change-this-test-password
 ```
 
-**Clean up afterward.** The suite **auto-deletes** the throwaway `redteam_*@redteam-test.com` user it creates, at session teardown via the admin account. This is best-effort: a `redteam_*` account only survives if the stack was unreachable during teardown, so prune any leftovers by filtering on the `redteam_*@redteam-test.com` pattern. The suite does **not** delete the dedicated superuser — that account is pre-existing and yours to manage. Leaving standing superuser credentials on a stack is itself a security risk, so after a run delete or disable the dedicated test superuser, especially on any shared or long-lived deployment. On a throwaway/CI stack you tear down immediately, this is moot.
+**Clean up afterward.** The suite **auto-deletes** the throwaway
+`redteam_*@redteam-test.com` user at session teardown via the admin account. It
+does **not** delete the dedicated superuser — that account is pre-existing and
+yours to manage. Leaving standing superuser credentials on a stack is itself a
+security risk, so after a run delete or disable the dedicated test superuser,
+especially on any shared or long-lived deployment.
 
 ## Run With The Recommended CLI Mode
 
@@ -132,10 +162,12 @@ Install (or update to the latest release of) `security-tests-m8`:
 pip install --upgrade security-tests-m8
 ```
 
-From the hardened stack directory, keep stack configuration in `.env`, `auth.env`, `media.env`, `worker.env`, and `grafana.env`, then create a dedicated `test.env` for the live-test runner values:
+From the stack directory, keep stack configuration in `.env`, `auth.env`,
+`media.env`, `worker.env`, `prompt.env`, and `grafana.env`, then create a
+dedicated `test.env` for the live-test runner values:
 
 ```bash
-cd /workspace/media-service-m8/docker_compose/hardened_media_m8
+cd /workspace/prompt-engine-m8/docker_compose/dev_local_prompt_m8
 cp test.env.example test.env
 # Edit test.env with the dedicated test account and, if used, real opt-in secrets.
 security-tests-m8 preflight --deployment-root .
@@ -144,16 +176,23 @@ security-tests-m8 run --env-file test.env
 security-tests-m8 run --env-file test.env --include-destructive
 ```
 
-Deployment preflight scans non-example `*.env` files under the deployment root, including `test.env` if you keep it there. Do not leave `changethis` or other placeholder values in `test.env`; either replace the opt-in secret values with the real values from `auth.env` / `media.env`, or omit those variables to skip their opt-in checks.
+Deployment preflight scans non-example `*.env` files under the deployment root,
+including `test.env` if you keep it there. Do not leave `changethis` or other
+placeholder values in `test.env`; either replace the opt-in secret values with
+the real values from `auth.env` / `prompt.env`, or omit those variables to skip
+their opt-in checks.
 
 ## Run This Advanced Pytest Example
 
-Use this folder when you want local pytest customization, marker selection, or extra local tests layered on top of the reusable package suite.
+Use this folder when you want local pytest customization, marker selection, or
+extra local tests layered on top of the reusable package suite.
 
-Copy the example env file, edit the dedicated test credentials, then run pytest from this directory. `tests/live/conftest.py` calls `configure_from_env()`, so the package loads `.env` from the current directory automatically:
+Copy the example env file, edit the dedicated test credentials, then run pytest
+from this directory. `tests/live/conftest.py` calls `configure_from_env()`, so
+the package loads `.env` from the current directory automatically:
 
 ```bash
-cd /workspace/media-service-m8/docker_compose/shared_live_tests
+cd /workspace/prompt-engine-m8/docker_compose/shared_live_tests
 cp env.example .env
 pytest
 ```
@@ -169,45 +208,58 @@ pytest -m live_stateful
 
 ## Configuration Values
 
-The example defaults are defined in `tests/live/conftest.py` and can be overridden with environment variables.
+The example defaults are defined in `tests/live/conftest.py` and can be
+overridden with environment variables.
 
 | Variable | Example value |
 | --- | --- |
 | `LIVE_TEST_AUTH_BASE` | `http://localhost:9000/user` |
 | `LIVE_TEST_INTERNAL_AUTH_BASE` | `http://localhost:9000/user` (internal entrypoint exposing `/private/*`; F06 targets it) |
-| `LIVE_TEST_SVC_BASE` | `http://localhost:9000/media` |
-| `LIVE_TEST_SVC_BASES` | `{"media":"http://localhost:9000/media"}` |
-| `LIVE_TEST_DEFAULT_SVC` | `media` |
+| `LIVE_TEST_SVC_BASE` | `http://localhost:9000/prompt` |
+| `LIVE_TEST_SVC_BASES` | `{"prompt":"http://localhost:9000/prompt"}` |
+| `LIVE_TEST_DEFAULT_SVC` | `prompt` |
 | `LIVE_TEST_ADMIN_EMAIL` | `tester@example.com` |
 | `LIVE_TEST_ADMIN_PASSWORD` | `change-this-test-password` |
 | `LIVE_TEST_PUBLIC_BASE` | `https://localhost:4430` |
 | `LIVE_TEST_PUBLIC_TLS_VERIFY` | `false` |
-| `LIVE_TEST_PRIVATE_API_SECRET` | real `PRIVATE_API_SECRET`, or unset |
-| `LIVE_TEST_PRIVATE_API_CLIENT_ID` | issuer consumer id (`media-service`) — `X-Internal-Client` for fa-auth-m8 ≥ 1.0.0; enables the F06 legacy-detection check |
+| `LIVE_TEST_PRIVATE_API_SECRET` | real `PRIVATE_API_SECRET` (from `prompt.env`), or unset |
+| `LIVE_TEST_PRIVATE_API_CLIENT_ID` | issuer consumer id (`prompt-engine-service`) — `X-Internal-Client`; enables the F06 legacy-detection check |
 | `LIVE_TEST_HEALTH_DETAIL_CREDENTIAL` | real `HEALTH_DETAIL_CREDENTIAL` (unlocks deep `/health` detail), or unset |
 | `LIVE_TEST_REFRESH_SECRET_KEY` | real `REFRESH_SECRET_KEY`, or unset |
 | `LIVE_TEST_FAIL_FAST_PREFLIGHT` | `true` |
 | `LIVE_TEST_FORBID_BOOTSTRAP_SUPERUSER` | `true` |
-| `LIVE_TEST_PROTECTED_ENDPOINTS` | `{"media":["/category/","/dashboard/users/activity/","/dashboard/users/activity/current/","/v1/objects","/v1/presets","/v1/admin/storage/stats","/v1/admin/uploads/stale","/v1/admin/maintenance/orphans","/v1/admin/subscriptions"]}` |
-| `LIVE_TEST_REPO_ROOT` | `/workspace/media-service-m8/docker_compose/hardened_media_m8` |
-| `LIVE_TEST_DEPLOYMENT_ROOT` | `/workspace/media-service-m8/docker_compose/hardened_media_m8` |
+| `LIVE_TEST_PROTECTED_ENDPOINTS` | `{"prompt":["/category/","/dashboard/users/activity/","/dashboard/users/activity/current/","/prompt-block/","/prompt-template/"]}` |
+| `LIVE_TEST_REPO_ROOT` | `/workspace/prompt-engine-m8/docker_compose/dev_local_prompt_m8` |
+| `LIVE_TEST_DEPLOYMENT_ROOT` | `/workspace/prompt-engine-m8/docker_compose/dev_local_prompt_m8` |
 
-`LIVE_TEST_REPO_ROOT` lets asymmetric-key tests inspect the hardened stack's generated `keys/private.pem` and `keys/public.pem` files.
-`LIVE_TEST_PRIVATE_API_SECRET` and `LIVE_TEST_REFRESH_SECRET_KEY` are opt-in secret-exposure checks. If they are unset, those specific tests skip.
-`LIVE_TEST_PRIVATE_API_CLIENT_ID` is the issuer's consumer id (`media-service`) sent as `X-Internal-Client`. The bundled issuer now runs the per-consumer model (`fa-auth-m8:1.0.0`, `PRIVATE_API_CONSUMERS` active), so set it together with `LIVE_TEST_PRIVATE_API_SECRET` to enable the F06 legacy-detection check (token-only must be rejected `401`).
-`LIVE_TEST_INTERNAL_AUTH_BASE` is the internal service-to-service entrypoint that exposes `/private/*`. Hardened stacks block `/private` at the public edge (Traefik → 404), so the F06 legacy-shape rejection can only be observed on the internal entrypoint. Set it when `LIVE_TEST_AUTH_BASE` points at the public edge (e.g. `https://localhost:4430/user`); it falls back to `LIVE_TEST_AUTH_BASE` when unset.
-`LIVE_TEST_HEALTH_DETAIL_CREDENTIAL` unlocks the deep `/health` detail (token mode, Redis/DB). fa-auth-m8 ≥ 1.0.0 gates it on a dedicated credential decoupled from `PRIVATE_API_SECRET` (opt-in/fail-closed; must differ from it); set it to the stack's `HEALTH_DETAIL_CREDENTIAL` once enabled in `auth.env`.
+`LIVE_TEST_REPO_ROOT` lets asymmetric-key tests inspect the stack's generated
+`keys/private.pem` and `keys/public.pem` files.
+`LIVE_TEST_PRIVATE_API_SECRET` and `LIVE_TEST_REFRESH_SECRET_KEY` are opt-in
+secret-exposure checks. If they are unset, those specific tests skip.
+`LIVE_TEST_PRIVATE_API_CLIENT_ID` is the issuer's consumer id
+(`prompt-engine-service`) sent as `X-Internal-Client`. The bundled issuer runs
+the per-consumer model (`fa-auth-m8` `PRIVATE_API_CONSUMERS` active), so set it
+together with `LIVE_TEST_PRIVATE_API_SECRET` to enable the F06 legacy-detection
+check (token-only must be rejected `401`).
+`LIVE_TEST_INTERNAL_AUTH_BASE` is the internal service-to-service entrypoint that
+exposes `/private/*`. Hardened stacks block `/private` at the public edge
+(Traefik → 404), so the F06 legacy-shape rejection can only be observed on the
+internal entrypoint; it falls back to `LIVE_TEST_AUTH_BASE` when unset.
+`LIVE_TEST_HEALTH_DETAIL_CREDENTIAL` unlocks the deep `/health` detail (token
+mode, Redis/DB). fa-auth-m8 gates it on a dedicated credential decoupled from
+`PRIVATE_API_SECRET` (opt-in/fail-closed; must differ from it); set it to the
+stack's `HEALTH_DETAIL_CREDENTIAL` once enabled.
 
 ## Adapting To Another Stack
 
-Nothing in this folder is specific to `hardened_media_m8` beyond the values in
+Nothing in this folder is specific to `dev_local_prompt_m8` beyond the values in
 `.env`. To target a different `fa-auth-m8` + `fastapi-m8` stack, copy
 `env.example` to `.env` and change configuration only:
 
 1. **Auth URL** — `LIVE_TEST_AUTH_BASE` → your issuer's public base.
 2. **Service URL(s)** — `LIVE_TEST_SVC_BASE` / `LIVE_TEST_SVC_BASES` +
    `LIVE_TEST_DEFAULT_SVC` → your `fastapi-m8` consumers (each service's
-   `API_PREFIX` root). For media-service this is `/media`.
+   `API_PREFIX` root). For prompt-engine this is `/prompt`.
 3. **Protected endpoints** — `LIVE_TEST_PROTECTED_ENDPOINTS` → the real
    authenticated read endpoints of each service, keyed by service name.
 4. **Public entrypoint / TLS** — `LIVE_TEST_PUBLIC_BASE`, and
