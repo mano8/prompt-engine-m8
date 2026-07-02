@@ -3,7 +3,7 @@
 # Testing
 pytest>=9.0.3
 pytest-cov>=7.1.0
-coverage>=7.14.1
+coverage>=7.14.3
 
 # Debugging
 debugpy>=1.8.20
