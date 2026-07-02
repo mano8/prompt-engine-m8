@@ -1,0 +1,26 @@
+version: 2
+
+updates:
+  # GitHub Actions - keep workflow action SHAs current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "ci"
+
+  # Python - prompt engine service dependencies.
+  - package-ecosystem: "pip"
+    directory: "/promt_engine_service"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "deps"
+
+  # Docker - service image updates.
+  - package-ecosystem: "docker"
+    directory: "/promt_engine_service"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "deps"
