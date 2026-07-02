@@ -1,6 +1,8 @@
 # prompt-engine-m8 - FastAPI Prompt Template Microservice
 
 ![CI](https://github.com/mano8/prompt-engine-m8/actions/workflows/CI.yaml/badge.svg?branch=main)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/9113c06590604fca9709d66d3b6fd64d)](https://app.codacy.com/gh/mano8/prompt-engine-m8/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+[![codecov](https://codecov.io/gh/mano8/prompt-engine-m8/graph/badge.svg?token=SD4GHGM24V)](https://codecov.io/gh/mano8/prompt-engine-m8)
 [![Docker Pulls](https://img.shields.io/docker/pulls/tepochtli/prompt-engine-m8)](https://hub.docker.com/r/tepochtli/prompt-engine-m8)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/mano8/prompt-engine-m8/blob/main/LICENSE)
 
