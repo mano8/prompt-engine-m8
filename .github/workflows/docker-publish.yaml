@@ -79,7 +79,7 @@ jobs:
           output: trivy-results.json
 
       - name: Generate SBOM (SPDX JSON)
-        uses: anchore/sbom-action@9f7302141466aa6482940f15371237e9d9f4c34a # v0.19.0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
           image: ${{ env.IMAGE_NAME }}:scan
           format: spdx-json
