@@ -22,6 +22,20 @@ from promt_engine_service.schemas.prompts import (
     PromptTemplateModel,
 )
 
+DYNAMIC_CONTENT_PLACEHOLDER = "{{dynamic_content}}"
+
+
+def render_dynamic_block_content(block_content: str, user_content: str) -> str:
+    """Render authored dynamic block content with caller-supplied content.
+
+    Only dynamic blocks interpret DYNAMIC_CONTENT_PLACEHOLDER. Dynamic blocks
+    without the placeholder keep the legacy behavior where caller content
+    replaces the whole block.
+    """
+    if DYNAMIC_CONTENT_PLACEHOLDER not in block_content:
+        return user_content
+    return block_content.replace(DYNAMIC_CONTENT_PLACEHOLDER, user_content)
+
 
 class PromptsController:
     """Prompt block and template operations."""
@@ -140,7 +154,7 @@ class PromptsController:
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"Dynamic content is required for block {block.id}:{block.name}",
                     )
-                contents.append(content)
+                contents.append(render_dynamic_block_content(block.content, content))
             else:
                 contents.append(block.content)
         return "\n\n".join(contents)
