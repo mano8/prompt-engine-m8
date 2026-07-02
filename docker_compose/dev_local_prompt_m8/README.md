@@ -1,17 +1,20 @@
-# dev_local_media_m8
+# dev_local_prompt_m8
 
-Local dev stack for `auth_user_service` + `media_service`.
+Local dev stack for `prompt_engine_service` on the full hardened M8 platform:
+`auth_user_service` (issuer) + `media_service` + `prompt_engine_service`, plus
+the async workers and infrastructure.
 
-Same hardened posture as `hardened_media_m8` (PostgreSQL 18, two Redis instances
-(auth + media), MinIO, Traefik, Prometheus, Grafana, RS256/JWKS auth, container
-hardening, network segmentation), with two developer conveniences:
+Same hardened posture as the media hardened stack (PostgreSQL 18, two Redis
+instances (auth + media), MinIO, ClamAV, Traefik, Prometheus, Grafana,
+RS256/JWKS auth, container hardening, network segmentation), with one developer
+convenience: **all application services are built from local source** (the
+sibling repos `../../../fa-auth-m8`, `../../../media-service-m8`,
+`../../../media-worker-m8`, and this repo) instead of pulling published images,
+and **MinIO is published on loopback** (`127.0.0.1:9005`/`9006`) for host access.
 
-- **`media_service` and `media_service_worker` are built from local source**
-  (`../../media_service`) instead of pulling the published image.
-- **MinIO is published on loopback** (`127.0.0.1:9005`/`9006`) so you can reach
-  the API/console from the host while iterating.
-
-`auth_user_service` and `media_worker` still use the published Docker Hub images.
+> For a lean prompt-only stack (just `auth_user_service` + `prompt_engine_service`,
+> no media/storage/scan/worker components), use
+> [`../dev_prompt_engine_m8`](../dev_prompt_engine_m8).
 
 ## Architecture
 
@@ -21,13 +24,18 @@ Browser / Frontend
        v
   Traefik :9000
        | app_net
-       +--> /user/*  -> auth_user_service :8000  (RS256 issuer)
-       +--> /media/* -> media_service :8000      (RS256 consumer via JWKS)
+       +--> /user/*   -> auth_user_service :8000   (RS256 issuer)
+       +--> /media/*  -> media_service :8000        (RS256 consumer via JWKS)
+       +--> /prompt/* -> prompt_engine_service :8000 (RS256 consumer via JWKS)
+
+  prompt_engine_service
+       +--> PostgreSQL (prompt_engine_db) on data_net
+       +--> auth_user_service private API (HTTP introspection) for token revocation
 
   media_service
-       +--> PostgreSQL on data_net
+       +--> PostgreSQL (media_db) on data_net
        +--> auth_user_service private API (HTTP introspection) for token revocation
-       +--> Media Redis on data_net for media queues/rate limits/cache
+       +--> Media Redis on data_net for queues/rate limits/cache
        +--> MinIO on data_net
 ```
 
@@ -36,8 +44,8 @@ Browser / Frontend
 through that network (MinIO additionally publishes loopback-only host ports for
 dev convenience).
 
-> **Token revocation:** the media service does **not** connect to the auth
-> Redis. In `stateful` mode it queries the auth service's private introspection
+> **Token revocation:** consumers do **not** connect to the auth Redis. In
+> `stateful` mode each consumer queries the auth service's private introspection
 > endpoint (`INTROSPECTION_URL` → `/user/private/v1/jti-status`) over HTTP. The
 > auth Redis (`redis_cache`) is used only by `auth_user_service`.
 
@@ -46,10 +54,11 @@ dev convenience).
 | Service | Image/build | Local access |
 | --- | --- | --- |
 | traefik | `traefik:v3.7.5` | `:8000`, `:4430`, `127.0.0.1:9000`, `127.0.0.1:8080` |
-| auth_user_service | `tepochtli/fa-auth-m8:0.9.9` | `/user` via Traefik |
-| media_service | local `../../media_service` build | `/media` via Traefik |
-| media_service_worker | local `../../media_service` build (arq command override) | internal — no port; lifecycle/outbox crons |
-| media_worker | `tepochtli/media-worker-m8:0.2.0` | internal — enqueue-driven (scan + variants) |
+| auth_user_service | local `../../../fa-auth-m8` build | `/user` via Traefik |
+| media_service | local `../../../media-service-m8` build | `/media` via Traefik |
+| media_service_worker | local `../../../media-service-m8` build (arq command override) | internal — no port; lifecycle/outbox crons |
+| media_worker | local `../../../media-worker-m8` build | internal — enqueue-driven (scan + variants) |
+| prompt_engine_service | local `../../` build (this repo) | `/prompt` via Traefik |
 | clamav | `clamav/clamav:1.5-debian13-slim` | internal `scan_net` only |
 | m8_db | `postgres:18.4-alpine` | internal data network |
 | redis_cache | `redis:8.8.0-alpine` | auth Redis — internal data network |
@@ -64,12 +73,16 @@ Traefik starts.
 
 ## Setup
 
-From `docker_compose/dev_media_m8`:
+From `docker_compose/dev_local_prompt_m8`:
 
 ```sh
 cp .env.example .env
 cp auth.env.example auth.env
 cp media.env.example media.env
+cp worker.env.example worker.env
+cp prompt.env.example prompt.env
+cp grafana.env.example grafana.env
+cp test.env.example test.env   # live-test runner config (edit before running tests)
 ```
 
 Edit `.env` (infrastructure / bootstrap):
@@ -83,52 +96,55 @@ AUTH_DB_NAME=auth_db
 MEDIA_DB_USER=<media-db-user>
 MEDIA_DB_PASSWORD=<media-db-password>
 MEDIA_DB_NAME=media_db
+PROMPT_DB_USER=<prompt-db-user>
+PROMPT_DB_PASSWORD=<prompt-db-password>
+PROMPT_DB_NAME=prompt_engine_db
 REDIS_PASSWORD=<auth-redis-password>
 MEDIA_REDIS_PASSWORD=<media-redis-password>
 MINIO_ROOT_USER=<minio-root-user>
 MINIO_ROOT_PASSWORD=<minio-root-password>
 ```
 
-Edit `auth.env` so its generic runtime DB values match the `AUTH_DB_*` triplet in
-`.env`, and set its `REDIS_PASSWORD` to match `.env`. `auth_user_service` is the
-only service that connects to the auth Redis.
+`init-db.sh` provisions a per-service PostgreSQL user + database from each
+`*_DB_*` triplet on first volume init. Each service then connects with the
+generic `DB_USER` / `DB_PASSWORD` / `DB_DATABASE` names in its own env file:
 
-Edit `media.env` so it matches the `MEDIA_DB_*` triplet in `.env`:
+- `auth.env` → `AUTH_DB_*`, plus `REDIS_PASSWORD` to match `.env` (only
+  `auth_user_service` connects to the auth Redis).
+- `media.env` → `MEDIA_DB_*`, plus the `MEDIA_REDIS_*` and `MINIO_*` values.
+- `prompt.env` → `PROMPT_DB_*`:
 
-```ini
-DB_DATABASE=media_db
-DB_USER=<same-as-MEDIA_DB_USER>
-DB_PASSWORD=<same-as-MEDIA_DB_PASSWORD>
-MINIO_HOST=minio
-MINIO_PORT=9000
-MINIO_ACCESS_KEY=<media-rw-user>
-MINIO_SECRET_KEY=<media-rw-password>
-MEDIA_REDIS_HOST=media_redis_cache
-MEDIA_REDIS_PASSWORD=<same-as-MEDIA_REDIS_PASSWORD-in-.env>
-```
-
-`MEDIA_REDIS_*` is the media-owned Redis for queues, rate limits, locks, and
-cache keys under the `media:*` namespace. `media.env` has **no** `REDIS_*`
-(auth Redis) settings — revocation goes through HTTP introspection.
+  ```ini
+  DB_DATABASE=prompt_engine_db
+  DB_USER=<same-as-PROMPT_DB_USER>
+  DB_PASSWORD=<same-as-PROMPT_DB_PASSWORD>
+  ```
 
 The `minio-init` one-shot provisions a MinIO user from `media.env`'s
-`MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`, so set those to the media-rw credentials
-you want (not the MinIO root user).
+`MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` (the media-rw credentials, not the MinIO
+root user). `prompt_engine_service` uses no object storage.
 
-### Secure-by-default settings (auth-sdk-m8 ≥ 1.0.0)
+### Secure-by-default settings (auth-sdk-m8 2.1.1)
 
-Both `auth.env` and `media.env` ship with two boot-required blocks. Leaving them
-unset makes the service **fail closed** at startup:
+`auth.env`, `media.env`, and `prompt.env` each ship with two boot-required
+blocks. Leaving them unset makes the service **fail closed** at startup:
 
 - **`TOKEN_ISSUER` / `TOKEN_AUDIENCE`** — required because
-  `TOKEN_STRICT_VALIDATION` defaults to `true`. Use identical issuer/audience
-  values across the auth service and every consumer (opt out with
-  `TOKEN_STRICT_VALIDATION=false` for local-only experiments).
+  `TOKEN_STRICT_VALIDATION` defaults to `true`. A single issuer stamps **one**
+  audience shared by every consumer, so use identical `TOKEN_ISSUER` /
+  `TOKEN_AUDIENCE` values across `auth.env`, `media.env`, and `prompt.env` (opt
+  out with `TOKEN_STRICT_VALIDATION=false` for local-only experiments).
 - **`EVENT_SIGNING_KEY`** — required because `EVENT_SIGNING_ENABLED` defaults to
-  `true`. Use the **same** key in `auth.env` and `media.env`. It signs and
+  `true`. Use the **same** key in `auth.env` and every consumer. It signs and
   verifies the auth event-stream payloads delivered over fa-auth's private SSE
-  bridge (`media_service` consumes them to evict its validation cache early); set
-  `EVENT_SIGNING_ENABLED=false` in both files to disable signing entirely.
+  bridge (each consumer evicts its validation cache early); set
+  `EVENT_SIGNING_ENABLED=false` everywhere to disable signing entirely.
+
+Both consumers use the per-consumer private-auth model: `prompt.env` sets
+`INTERNAL_CLIENT_ID=prompt-engine-service` and `media.env` sets
+`INTERNAL_CLIENT_ID=media-service`. **Both ids must be registered** in
+`auth.env`'s `PRIVATE_API_CONSUMERS`, each with a secret equal to that consumer's
+`PRIVATE_API_SECRET`.
 
 Initialize keys and local certificates:
 
@@ -136,40 +152,11 @@ Initialize keys and local certificates:
 bash init.sh
 ```
 
-On Windows, run this from Git Bash.
-
-Start the stack:
+On Windows, run this from Git Bash. Start the stack:
 
 ```sh
-docker-compose up -d --build
+docker compose up -d --build
 ```
-
-If your Docker install supports Compose v2, `docker compose up -d --build` is
-equivalent.
-
-## MinIO
-
-MinIO is exposed only on loopback for local development:
-
-| Endpoint | URL |
-| --- | --- |
-| API | `http://127.0.0.1:9005` |
-| Console | `http://127.0.0.1:9006` |
-
-The `minio-init` one-shot service creates these logical buckets:
-
-```text
-public-media
-private-media
-sensitive-media
-temp-media
-archive-media
-```
-
-It also creates and attaches a scoped `media-rw` policy/user for the media
-service credentials from `media.env`. `media_service` waits for `minio-init` to
-complete before starting and uses `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`, not
-the MinIO root credentials.
 
 ## URLs
 
@@ -177,7 +164,10 @@ the MinIO root credentials.
 | --- | --- |
 | Auth docs | `http://localhost:9000/user/docs` |
 | Media docs | `http://localhost:9000/media/docs` |
+| Prompt docs | `http://localhost:9000/prompt/docs` |
 | JWKS | `http://localhost:9000/user/.well-known/jwks.json` |
+| Prompt health | `http://localhost:9000/prompt/health/` |
+| Prompt metrics | `http://localhost:9000/prompt/metrics` |
 | Media metrics | `http://localhost:9000/media/metrics` |
 | Traefik dashboard | `http://localhost:8080` |
 | Prometheus | `http://localhost:9090` |
@@ -186,51 +176,52 @@ the MinIO root credentials.
 
 ## Observability
 
-Prometheus scrapes:
+Prometheus scrapes (when `METRICS_ENABLED=true` on each service):
 
 | Job | Target | Path |
 | --- | --- | --- |
 | traefik | `traefik:8082` | built-in metrics |
 | auth_user_service | `auth_user_service:8000` | `/user/metrics` |
 | media_service | `media_service:8000` | `/media/metrics` |
+| prompt_engine_service | `prompt_engine_service:8000` | `/prompt/metrics` |
 
-Grafana uses the local Prometheus datasource. Default local credentials are
-controlled by `grafana/config.monitoring`.
+Grafana uses the local Prometheus datasource; default credentials come from
+`grafana.env`.
 
 ## Configuration Notes
 
-- `.env` is infrastructure/bootstrap config. It provisions `AUTH_DB_*` and
-  `MEDIA_DB_*` through `../shared/db_init/init-db.sh`, and supplies the Redis and
-  MinIO root passwords used by the `redis_cache`, `media_redis_cache`, and
-  `minio` services via Compose interpolation.
-- `auth.env` and `media.env` are runtime application configs consumed by
-  `auth-sdk-m8`. They use generic `DB_DATABASE`, `DB_USER`, `DB_PASSWORD` — do
-  **not** replace those with the `MEDIA_DB_*` / `AUTH_DB_*` names.
-- Only `auth_user_service` connects to the auth Redis (`redis_cache`). The media
-  service reaches the auth service over HTTP (`INTROSPECTION_URL`) for revocation.
-- Use `MEDIA_REDIS_*` (→ `media_redis_cache`) for media-owned runtime state.
-- **Per-service scoped Redis ACLs (plan 6.x.1).** Each Redis bootstraps a scoped
-  ACL user instead of an open `~* +@all`: `redis_cache` creates `auth` (locked to
-  the auth service's own key prefixes) and `media_redis_cache` creates `media`
-  (locked to the `media:*` namespace + the `arq:*` queue keys). Both grant only
-  the command categories the apps use and deny `@dangerous`/admin; the `default`
-  user is stripped to connection-only so the healthcheck `PING` still works.
-  `REDIS_USER=auth` / `MEDIA_REDIS_USER=media` wire the apps to those users.
-- `.env`, `auth.env`, and `media.env` hold secrets and are git-ignored (`*.env`);
-  only the `*.example` files are tracked.
-- The media service base path is `/media`.
-- This dev stack builds `media_service` from source; the published-image
-  equivalent is `hardened_media_m8`.
+- `.env` is infrastructure/bootstrap config. It provisions `AUTH_DB_*`,
+  `MEDIA_DB_*`, and `PROMPT_DB_*` through `../shared/db_init/init-db.sh`, and
+  supplies the Redis and MinIO root passwords used by `redis_cache`,
+  `media_redis_cache`, and `minio` via Compose interpolation.
+- `auth.env`, `media.env`, and `prompt.env` are runtime application configs
+  consumed by `fastapi-m8` / `auth-sdk-m8`. They use generic `DB_DATABASE`,
+  `DB_USER`, `DB_PASSWORD` — do **not** replace those with the `*_DB_*` names.
+- Only `auth_user_service` connects to the auth Redis (`redis_cache`). Consumers
+  reach the auth service over HTTP (`INTROSPECTION_URL`) for revocation.
+- `.env`, `auth.env`, `media.env`, `worker.env`, `prompt.env`, `grafana.env`,
+  and `test.env` hold secrets and are git-ignored (`*.env`); only the `*.example`
+  files are tracked.
+- Service base paths: auth `/user`, media `/media`, prompt `/prompt`.
+
+## Live security tests
+
+`test.env` configures the `security-tests-m8` runner (see
+[`../shared_live_tests`](../shared_live_tests) for the pytest example). It targets
+the `prompt_engine_service` consumer by default (`LIVE_TEST_SVC_BASE=/prompt`,
+`LIVE_TEST_PRIVATE_API_CLIENT_ID=prompt-engine-service`); add a `media` entry to
+`LIVE_TEST_SVC_BASES` / `LIVE_TEST_PROTECTED_ENDPOINTS` to also exercise
+media-service. Use a dedicated test-only superuser — never `FIRST_SUPERUSER`.
 
 ## Common Commands
 
 ```sh
-docker-compose config
-docker-compose up -d --build
-docker-compose ps
-docker-compose logs -f media_service
-docker-compose logs -f minio-init
-docker-compose down
+docker compose config
+docker compose up -d --build
+docker compose ps
+docker compose logs -f prompt_engine_service
+docker compose logs -f media_service
+docker compose down
 ```
 
 Resetting the DB is destructive:
@@ -247,26 +238,21 @@ needed on WSL2/Linux bind mounts. On every run `init.sh` also enforces
 ## Troubleshooting
 
 **`changethis` rejection on startup**: replace placeholder values in `.env`,
-`auth.env`, and `media.env`.
+`auth.env`, `media.env`, and `prompt.env`.
 
 **Service exits at boot complaining about `EVENT_SIGNING_KEY` or
-`TOKEN_ISSUER`/`TOKEN_AUDIENCE`**: these are required under auth-sdk-m8 ≥ 1.0.0.
-Set them (identically across auth + media), or set `EVENT_SIGNING_ENABLED=false`
-/ `TOKEN_STRICT_VALIDATION=false` for local-only runs.
+`TOKEN_ISSUER`/`TOKEN_AUDIENCE`**: these are required under auth-sdk-m8. Set them
+identically across auth + every consumer, or set `EVENT_SIGNING_ENABLED=false` /
+`TOKEN_STRICT_VALIDATION=false` for local-only runs.
 
-**Media service cannot connect to MinIO**: inside Docker, use `MINIO_HOST=minio`
-and `MINIO_PORT=9000`. The **browser**, however, uses `MINIO_PUBLIC_ENDPOINT`
-(`http://127.0.0.1:9005`) to reach MinIO directly for presigned uploads/downloads;
-this is distinct from the internal `minio:9000` endpoint. This separation
-enables browser-direct Option A uploads (presigned POSTs and GETs), which
-requires the public endpoint for the signatures to validate correctly.
+**Prompt calls to the auth private API return 401**: confirm
+`prompt.env`'s `INTERNAL_CLIENT_ID=prompt-engine-service` is registered in
+`auth.env`'s `PRIVATE_API_CONSUMERS` with a secret equal to `prompt.env`'s
+`PRIVATE_API_SECRET`.
 
-**`minio-init` fails or buckets are missing**: check `docker-compose logs minio-init`.
-It waits for MinIO to be healthy, then creates buckets and the `media-rw` user.
-
-**DB user authentication fails**: confirm `media.env` `DB_USER` / `DB_PASSWORD`
-match `.env` `MEDIA_DB_USER` / `MEDIA_DB_PASSWORD`. If `db_data/` already exists,
+**DB user authentication fails**: confirm each service env's `DB_USER` /
+`DB_PASSWORD` match its `*_DB_*` triplet in `.env`. If `db_data/` already exists,
 DB init will not rerun unless you reset it.
 
-**Prometheus media target is down**: check `media_service` logs and confirm
-`/media/metrics` is enabled with `METRICS_ENABLED=true`.
+**Prometheus prompt target is down**: check `prompt_engine_service` logs and
+confirm `/prompt/metrics` is enabled with `METRICS_ENABLED=true`.
