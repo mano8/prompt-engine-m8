@@ -3,19 +3,28 @@ FROM python:3.14-slim@sha256:c845af9399020c7e562969a13689e929074a10fd057acd1b1fa
 
 WORKDIR /install
 
-ARG ENVIRONMENT=prod
+ARG ENVIRONMENT=production
 ENV PIP_ROOT_USER_ACTION=ignore
 
 COPY ./promt_engine_service/requirements_base.txt .
 COPY ./promt_engine_service/requirements_dev.txt .
 COPY ./promt_engine_service/requirements_prod.txt .
+COPY ./promt_engine_service/requirements_prod.lock .
 
+# Release images install from a hash-locked, fully pinned dependency set so a
+# rebuild of the same source cannot silently resolve a different graph.
+# `--require-hashes` is enforced for every non-development build. Regenerate
+# the lock with:
+#   pip-compile --generate-hashes --no-emit-index-url \
+#     --output-file=promt_engine_service/requirements_prod.lock \
+#     promt_engine_service/requirements_prod.txt
 RUN pip install --upgrade "pip==26.1.1" && \
-    pip install --prefix=/install --no-cache-dir -r requirements_base.txt && \
     if [ "$ENVIRONMENT" = "development" ]; then \
+        pip install --prefix=/install --no-cache-dir -r requirements_base.txt && \
         pip install --prefix=/install --no-cache-dir -r requirements_dev.txt ; \
     else \
-        pip install --prefix=/install --no-cache-dir -r requirements_prod.txt ; \
+        pip install --prefix=/install --no-cache-dir \
+            --require-hashes -r requirements_prod.lock ; \
     fi
 
 
@@ -25,7 +34,12 @@ FROM python:3.14-slim@sha256:c845af9399020c7e562969a13689e929074a10fd057acd1b1fa
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/home/appuser/.local/bin:$PATH"
-ENV PYTHONPATH=/opt/promt_engine_service
+ENV PYTHONPATH=/opt:/opt/promt_engine_service
+
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends curl=8.14.1-2+deb13u3 \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid 1000 appuser && \
     useradd --uid 1000 --gid appuser --create-home appuser

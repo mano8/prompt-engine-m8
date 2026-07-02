@@ -33,7 +33,9 @@ def prompt_block_list(
         count_statement = select(func.count()).select_from(PromptBlock)
         if not current_user.is_superuser:
             statement = statement.where(PromptBlock.owner_id == current_user.id)
-            count_statement = count_statement.where(PromptBlock.owner_id == current_user.id)
+            count_statement = count_statement.where(
+                PromptBlock.owner_id == current_user.id
+            )
         return PromptBlocksPublic(
             data=session.exec(statement).all(),
             count=session.exec(count_statement).one(),
@@ -47,7 +49,9 @@ def prompt_block_list(
     response_model=Union[ResponseModelBase, ResponseMessage],
     responses=BaseController.get_error_responses(),
 )
-def get_prompt_block(session: SessionDep, current_user: CurrentUser, item_id: int) -> Any:
+def get_prompt_block(
+    session: SessionDep, current_user: CurrentUser, item_id: int
+) -> Any:
     """Get a prompt block by ID."""
     try:
         block = PromptsController.get_block_for_user(session, current_user, item_id)
@@ -145,7 +149,9 @@ def delete_prompt_block(
     try:
         block = PromptsController.get_block_for_user(session, current_user, item_id)
         if block.templates:
-            raise HTTPException(status_code=409, detail="Prompt block is used by a template")
+            raise HTTPException(
+                status_code=409, detail="Prompt block is used by a template"
+            )
         session.delete(block)
         session.commit()
         return ResponseMessage(success=True, msg="Prompt block deleted successfully")

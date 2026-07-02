@@ -1,0 +1,5 @@
+[allowlist]
+description = "Allow deterministic pytest bootstrap values from the existing PR range."
+regexes = [
+  '''"DB_PASSWORD": "CiTestDb_Passw0rd"''',
+]

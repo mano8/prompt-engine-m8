@@ -14,15 +14,21 @@ import sys
 from logging.config import fileConfig
 from typing import Any, Literal
 
-from alembic import context
-from sqlalchemy import engine_from_config, pool
-from sqlmodel import SQLModel
+# ---------------------------------------------------------------------
+# PYTHONPATH (Docker / monorepo safe)
+# ---------------------------------------------------------------------
+SERVICE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SERVICE_PARENT_DIR = os.path.dirname(SERVICE_DIR)
+for path in (SERVICE_PARENT_DIR, SERVICE_DIR):
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
-from promt_engine_service.core.config import settings
-import promt_engine_service.db_models  # noqa: F401
+from alembic import context  # noqa: E402
+from sqlalchemy import engine_from_config, pool  # noqa: E402
+from sqlmodel import SQLModel  # noqa: E402
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, BASE_DIR)
+from promt_engine_service.core.config import settings  # noqa: E402
+import promt_engine_service.db_models  # noqa: E402, F401
 
 config = context.config
 

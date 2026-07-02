@@ -1,0 +1,21 @@
+{
+  "title": "prompt-engine-m8",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Prompt Engine Up",
+      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 4},
+      "targets": [{"expr": "up{job=\"prompt_engine_service\"}", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Prompt Engine Requests",
+      "gridPos": {"x": 0, "y": 4, "w": 16, "h": 8},
+      "targets": [{"expr": "sum(rate(prompt_http_requests_total[5m]))", "refId": "A"}]
+    }
+  ]
+}

@@ -95,7 +95,7 @@ def create_item(
         session.refresh(item)
         return ResponseModelBase(success=True, data=dict(item))
     except Exception as ex:
-        BaseController.handle_exception(ex=ex, session=session)
+        return BaseController.handle_exception(ex=ex, session=session)
 
 
 @router.put(
@@ -126,7 +126,7 @@ def update_item(
         session.refresh(item)
         return ResponseModelBase(success=True, data=dict(item))
     except Exception as ex:
-        BaseController.handle_exception(ex=ex, session=session)
+        return BaseController.handle_exception(ex=ex, session=session)
 
 
 @router.delete(
@@ -150,4 +150,4 @@ def delete_item(
         session.commit()
         return ResponseMessage(success=True, msg="Category deleted successfully")
     except Exception as ex:
-        BaseController.handle_exception(ex=ex, session=session)
+        return BaseController.handle_exception(ex=ex, session=session)

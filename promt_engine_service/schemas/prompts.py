@@ -2,7 +2,14 @@
 
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictStr,
+    model_validator,
+)
 from slugify import slugify
 from typing_extensions import Annotated, TypedDict
 

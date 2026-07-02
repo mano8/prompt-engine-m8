@@ -31,7 +31,6 @@ class Settings(ConsumerServiceSettings):
     CONTRACT_RANGE: str = ">=0.0.1 <0.1.0"
 
 
-
 try:
     settings = Settings()
 except Exception as exc:  # pragma: no cover

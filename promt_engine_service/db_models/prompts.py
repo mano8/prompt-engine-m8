@@ -1,8 +1,6 @@
 """Prompt database models."""
 
-from __future__ import annotations
-
-from typing import List, Optional
+from typing import Optional
 import uuid
 
 from sqlalchemy import TEXT, Column, UniqueConstraint
@@ -23,11 +21,11 @@ class PromptBlockBase(SQLModel):
     slug: str = Field(unique=True, min_length=1, max_length=100, index=True)
     description: Optional[str] = Field(
         default=None,
-        sa_column=Column(TEXT(collation="utf8mb4_unicode_ci"), nullable=True),
+        sa_column=Column(TEXT(), nullable=True),
         max_length=1000,
     )
     content: str = Field(
-        sa_column=Column(TEXT(collation="utf8mb4_unicode_ci"), nullable=False),
+        sa_column=Column(TEXT(), nullable=False),
         max_length=5000,
     )
     type: PromptBlockType = Field(sa_column_kwargs={"nullable": False})
@@ -66,7 +64,7 @@ class PromptBlock(TimestampMixin, PromptBlockBase, SQLModel, table=True):
         sa_column=Column("owner_id", UUIDString(), nullable=False, index=True),
         description="UUID of the owning user",
     )
-    templates: List["TemplateBlock"] = Relationship(back_populates="block")
+    templates: list["TemplateBlock"] = Relationship(back_populates="block")
 
 
 class PromptBlockPublic(PromptBlockBase, SQLModel):
@@ -79,7 +77,7 @@ class PromptBlockPublic(PromptBlockBase, SQLModel):
 class PromptBlocksPublic(SQLModel):
     """Paginated prompt block list."""
 
-    data: List[PromptBlockPublic]
+    data: list[PromptBlockPublic]
     count: int
 
 
@@ -90,7 +88,7 @@ class PromptTemplateBase(TimestampMixin, SQLModel):
     slug: str = Field(unique=True, min_length=1, max_length=100, index=True)
     description: Optional[str] = Field(
         default=None,
-        sa_column=Column(TEXT(collation="utf8mb4_unicode_ci"), nullable=True),
+        sa_column=Column(TEXT(), nullable=True),
         max_length=1000,
     )
     is_public: bool = Field(default=True)
@@ -110,7 +108,7 @@ class PromptTemplate(PromptTemplateBase, SQLModel, table=True):
         sa_column=Column("owner_id", UUIDString(), nullable=False, index=True),
         description="Owning user ID",
     )
-    blocks: List["TemplateBlock"] = Relationship(
+    blocks: list["TemplateBlock"] = Relationship(
         back_populates="template",
         sa_relationship_kwargs={"order_by": "TemplateBlock.position"},
     )
@@ -126,7 +124,7 @@ class PromptTemplatePublic(PromptTemplateBase, SQLModel):
 class PromptTemplatesPublic(SQLModel):
     """Paginated prompt template list."""
 
-    data: List[PromptTemplatePublic]
+    data: list[PromptTemplatePublic]
     count: int
 
 
@@ -182,5 +180,5 @@ class TemplateBlockPublic(SQLModel):
 class TemplateBlocksPublic(SQLModel):
     """Paginated template-block list."""
 
-    data: List[TemplateBlockPublic]
+    data: list[TemplateBlockPublic]
     count: int
