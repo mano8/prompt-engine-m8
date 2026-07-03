@@ -82,8 +82,8 @@ def test_contract_version_is_1_0() -> None:
 def test_contract_range_is_1_x() -> None:
     from promt_engine_service.core.config import settings
 
-    assert settings.CONTRACT_RANGE == ">=1.0.0 <2.0.0", (
-        f"CONTRACT_RANGE must be '>=1.0.0 <2.0.0', got {settings.CONTRACT_RANGE!r}"
+    assert settings.CONTRACT_RANGE == ">=1.1.0 <2.0.0", (
+        f"CONTRACT_RANGE must be '>=1.1.0 <2.0.0', got {settings.CONTRACT_RANGE!r}"
     )
 
 
