@@ -27,8 +27,8 @@ class Settings(ConsumerServiceSettings):
 
     SERVICE_VERSION: str = __version__
     CONTRACT_NAME: str = "prompt-engine-m8"
-    CONTRACT_VERSION: str = "0.0"
-    CONTRACT_RANGE: str = ">=0.0.1 <0.1.0"
+    CONTRACT_VERSION: str = "1.0"
+    CONTRACT_RANGE: str = ">=1.0.0 <2.0.0"
 
 
 try:
