@@ -70,6 +70,13 @@ REFRESH_TOKEN_EXPIRE_MINUTES=3600
 INTROSPECTION_URL=http://auth_user_service:8000/user/private/v1/jti-status
 PRIVATE_API_SECRET=changethis
 
+# ── Revocation failure mode (consumer) ───────────────────────────────────────
+# Behaviour when the fa-auth introspection call fails.
+# fail_closed (default, secure): reject the request. fail_open: allow through
+# (availability over strictness; each swallowed failure is logged + counted).
+# Declared explicitly here rather than left to inherit the SDK default.
+ACCESS_REVOCATION_FAILURE_MODE=fail_closed
+
 # ── Observability ─────────────────────────────────────────────────────────────
 # Master switch — false = zero overhead, /metrics endpoint not registered
 #METRICS_ENABLED=false
