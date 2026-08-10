@@ -2,13 +2,18 @@
 
 from typing import Any, Optional, Union, cast
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import selectinload
 from sqlmodel import func, select
 
 from auth_sdk_m8.controllers.base import BaseController
 from auth_sdk_m8.schemas.base import ResponseMessage, ResponseModelBase
-from promt_engine_service.app.deps import CurrentUser, SessionDep
+from promt_engine_service.app.deps import (
+    CurrentPrincipal,
+    CurrentWriter,
+    SessionDep,
+    get_current_user,
+)
 from promt_engine_service.controllers.prompts import PromptsController
 from promt_engine_service.db_models.prompts import PromptTemplate, TemplateBlock
 from promt_engine_service.schemas.prompts import (
@@ -17,7 +22,15 @@ from promt_engine_service.schemas.prompts import (
     PromptTemplatesList,
 )
 
-router = APIRouter(prefix="/prompt-template", tags=["prompt-template"])
+# Router floor: authentication — same rationale as ``prompt_blocks``. The read
+# routes admit the ``USER`` tier (public templates only); everything that
+# mutates a template or its block list carries ``CurrentWriter`` explicitly,
+# including the three that do so behind a ``GET``/``DELETE`` verb.
+router = APIRouter(
+    prefix="/prompt-template",
+    tags=["prompt-template"],
+    dependencies=[Depends(get_current_user)],
+)
 # pylint: disable=not-callable,broad-exception-caught
 
 
@@ -28,7 +41,7 @@ router = APIRouter(prefix="/prompt-template", tags=["prompt-template"])
 )
 def prompt_template_list(
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentPrincipal,
     skip: int = 0,
     limit: int = 100,
 ) -> Any:
@@ -45,11 +58,10 @@ def prompt_template_list(
             .limit(limit)
         )
         count_statement = select(func.count()).select_from(PromptTemplate)
-        if not current_user.is_superuser:
-            statement = statement.where(PromptTemplate.owner_id == current_user.id)
-            count_statement = count_statement.where(
-                PromptTemplate.owner_id == current_user.id
-            )
+        visibility = PromptsController.visibility_filter(PromptTemplate, current_user)
+        if visibility is not None:
+            statement = statement.where(visibility)
+            count_statement = count_statement.where(visibility)
         items = session.exec(statement).all()
         return PromptTemplatesList(
             count=session.exec(count_statement).one(),
@@ -65,11 +77,11 @@ def prompt_template_list(
     responses=BaseController.get_error_responses(),
 )
 def get_prompt_template(
-    session: SessionDep, current_user: CurrentUser, item_id: int
+    session: SessionDep, current_user: CurrentPrincipal, item_id: int
 ) -> Any:
     """Get a prompt template by ID."""
     try:
-        template = PromptsController.get_template_for_user(
+        template = PromptsController.get_readable_template(
             session, current_user, item_id
         )
         return ResponseModelBase(
@@ -88,7 +100,7 @@ def get_prompt_template(
 )
 def get_prompt_template_by_slug(
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentPrincipal,
     item_slug: str,
 ) -> Any:
     """Get a prompt template by slug."""
@@ -102,8 +114,9 @@ def get_prompt_template_by_slug(
                 )
             )
         )
-        if not current_user.is_superuser:
-            statement = statement.where(PromptTemplate.owner_id == current_user.id)
+        visibility = PromptsController.visibility_filter(PromptTemplate, current_user)
+        if visibility is not None:
+            statement = statement.where(visibility)
         template = session.exec(statement).first()
         if template is None:
             return ResponseMessage(success=False, msg="Item not found.")
@@ -120,11 +133,11 @@ def get_prompt_template_by_slug(
     responses=BaseController.get_error_responses(),
 )
 def get_prompt_template_blocks(
-    session: SessionDep, current_user: CurrentUser, item_id: int
+    session: SessionDep, current_user: CurrentPrincipal, item_id: int
 ) -> Any:
     """Get ordered blocks for a prompt template."""
     try:
-        template = PromptsController.get_template_for_user(
+        template = PromptsController.get_readable_template(
             session, current_user, item_id
         )
         if not template.blocks:
@@ -145,13 +158,13 @@ def get_prompt_template_blocks(
 )
 def compose_prompt_template(
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentPrincipal,
     item_id: int,
     dynamic_content: Optional[list[DynamicBlock]] = None,
 ) -> Any:
     """Compose a prompt template into a deterministic prompt string."""
     try:
-        template = PromptsController.get_template_for_user(
+        template = PromptsController.get_readable_template(
             session, current_user, item_id
         )
         content = PromptsController.compose_prompt_content(
@@ -173,7 +186,7 @@ def compose_prompt_template(
 def add_prompt_template(
     *,
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentWriter,
     item_in: PromptTemplateModel,
 ) -> Any:
     """Create a prompt template."""
@@ -196,7 +209,7 @@ def add_prompt_template(
 def update_prompt_template(
     *,
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentWriter,
     item_id: int,
     item_in: PromptTemplateModel,
 ) -> Any:
@@ -221,7 +234,7 @@ def update_prompt_template(
     responses=BaseController.get_error_responses(),
 )
 def delete_prompt_template(
-    session: SessionDep, current_user: CurrentUser, item_id: int
+    session: SessionDep, current_user: CurrentWriter, item_id: int
 ) -> ResponseMessage:
     """Delete a prompt template."""
     try:
@@ -248,7 +261,7 @@ def delete_prompt_template(
 def add_block_to_prompt_template(
     *,
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentWriter,
     block_id: int,
     template_id: int,
     position: int = 0,
@@ -277,7 +290,7 @@ def add_block_to_prompt_template(
 def update_prompt_template_block_position(
     *,
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentWriter,
     block_id: int,
     template_id: int,
     position: int = 1,
@@ -306,7 +319,7 @@ def update_prompt_template_block_position(
 def delete_block_from_prompt_template(
     *,
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentWriter,
     block_id: int,
     template_id: int,
 ) -> Any:

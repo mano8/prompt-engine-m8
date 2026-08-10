@@ -2,17 +2,30 @@
 
 from typing import Any, Union
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import func, select
 
 from auth_sdk_m8.controllers.base import BaseController
 from auth_sdk_m8.schemas.base import ResponseMessage, ResponseModelBase
-from promt_engine_service.app.deps import CurrentUser, SessionDep
+from promt_engine_service.app.deps import (
+    CurrentPrincipal,
+    CurrentWriter,
+    SessionDep,
+    get_current_user,
+)
 from promt_engine_service.controllers.prompts import PromptsController
 from promt_engine_service.db_models.prompts import PromptBlock, PromptBlocksPublic
 from promt_engine_service.schemas.prompts import PromptBlockModel
 
-router = APIRouter(prefix="/prompt-block", tags=["prompt-block"])
+# Router floor: authentication. The read routes below deliberately admit the
+# ``USER`` tier (public blocks only), so a reader floor would be wrong here —
+# but a route added later must not be reachable anonymously, and mounting the
+# floor is what makes that inherited rather than remembered.
+router = APIRouter(
+    prefix="/prompt-block",
+    tags=["prompt-block"],
+    dependencies=[Depends(get_current_user)],
+)
 # pylint: disable=not-callable,broad-exception-caught
 
 
@@ -23,7 +36,7 @@ router = APIRouter(prefix="/prompt-block", tags=["prompt-block"])
 )
 def prompt_block_list(
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentPrincipal,
     skip: int = 0,
     limit: int = 100,
 ) -> Any:
@@ -31,11 +44,10 @@ def prompt_block_list(
     try:
         statement = select(PromptBlock).offset(skip).limit(limit)
         count_statement = select(func.count()).select_from(PromptBlock)
-        if not current_user.is_superuser:
-            statement = statement.where(PromptBlock.owner_id == current_user.id)
-            count_statement = count_statement.where(
-                PromptBlock.owner_id == current_user.id
-            )
+        visibility = PromptsController.visibility_filter(PromptBlock, current_user)
+        if visibility is not None:
+            statement = statement.where(visibility)
+            count_statement = count_statement.where(visibility)
         return PromptBlocksPublic(
             data=session.exec(statement).all(),
             count=session.exec(count_statement).one(),
@@ -50,11 +62,11 @@ def prompt_block_list(
     responses=BaseController.get_error_responses(),
 )
 def get_prompt_block(
-    session: SessionDep, current_user: CurrentUser, item_id: int
+    session: SessionDep, current_user: CurrentPrincipal, item_id: int
 ) -> Any:
     """Get a prompt block by ID."""
     try:
-        block = PromptsController.get_block_for_user(session, current_user, item_id)
+        block = PromptsController.get_readable_block(session, current_user, item_id)
         return ResponseModelBase(success=True, data=block.model_dump())
     except HTTPException:
         raise
@@ -69,14 +81,15 @@ def get_prompt_block(
 )
 def get_prompt_block_by_slug(
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentPrincipal,
     item_slug: str,
 ) -> Any:
     """Get a prompt block by slug."""
     try:
         statement = select(PromptBlock).where(PromptBlock.slug == item_slug)
-        if not current_user.is_superuser:
-            statement = statement.where(PromptBlock.owner_id == current_user.id)
+        visibility = PromptsController.visibility_filter(PromptBlock, current_user)
+        if visibility is not None:
+            statement = statement.where(visibility)
         block = session.exec(statement).first()
         if block is None:
             return ResponseMessage(success=False, msg="Item not found.")
@@ -93,7 +106,7 @@ def get_prompt_block_by_slug(
 def add_prompt_block(
     *,
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentWriter,
     item_in: PromptBlockModel,
 ) -> Any:
     """Create a prompt block."""
@@ -116,7 +129,7 @@ def add_prompt_block(
 def update_prompt_block(
     *,
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentWriter,
     item_id: int,
     item_in: PromptBlockModel,
 ) -> Any:
@@ -142,7 +155,7 @@ def update_prompt_block(
 )
 def delete_prompt_block(
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentWriter,
     item_id: int,
 ) -> ResponseMessage:
     """Delete a prompt block."""

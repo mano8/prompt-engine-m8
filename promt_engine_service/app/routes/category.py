@@ -1,11 +1,16 @@
 """Category api routes."""
 
 from typing import Any, Optional, Union
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 from sqlmodel import func
 
-from promt_engine_service.app.deps import CurrentUser, SessionDep
+from promt_engine_service.app.deps import (
+    CurrentReader,
+    CurrentWriter,
+    SessionDep,
+    require_reader,
+)
 
 from promt_engine_service.db_models.categories import (
     Category,
@@ -16,7 +21,14 @@ from promt_engine_service.db_models.categories import (
 from auth_sdk_m8.schemas.base import ResponseMessage, ResponseModelBase
 from auth_sdk_m8.controllers.base import BaseController
 
-router = APIRouter(prefix="/category", tags=["category"])
+# Router floor: reader. A category carries no ``is_public`` column, so there is
+# no public view of one — every read here is an owned read, and a route added
+# later inherits that floor instead of having to remember it.
+router = APIRouter(
+    prefix="/category",
+    tags=["category"],
+    dependencies=[Depends(require_reader)],
+)
 # pylint: disable=broad-exception-caught, not-callable
 
 
@@ -26,7 +38,7 @@ router = APIRouter(prefix="/category", tags=["category"])
     responses=BaseController.get_error_responses(),
 )
 async def read_root(
-    session: SessionDep, current_user: CurrentUser, skip: int = 0, limit: int = 100
+    session: SessionDep, current_user: CurrentReader, skip: int = 0, limit: int = 100
 ) -> Any:
     """Retrieve category list."""
     try:
@@ -60,7 +72,7 @@ async def read_root(
     response_model=Union[ResponseModelBase, ResponseMessage],
     responses=BaseController.get_error_responses(),
 )
-def read_item(session: SessionDep, current_user: CurrentUser, item_id: int) -> Any:
+def read_item(session: SessionDep, current_user: CurrentReader, item_id: int) -> Any:
     """
     Get item by ID.
     """
@@ -83,7 +95,7 @@ def read_item(session: SessionDep, current_user: CurrentUser, item_id: int) -> A
     responses=BaseController.get_error_responses(),
 )
 def create_item(
-    *, session: SessionDep, current_user: CurrentUser, item_in: CategoryCreate
+    *, session: SessionDep, current_user: CurrentWriter, item_in: CategoryCreate
 ) -> Any:
     """
     Create new item.
@@ -106,7 +118,7 @@ def create_item(
 def update_item(
     *,
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentWriter,
     item_id: int,
     item_in: CategoryUpdate,
 ) -> Any:
@@ -135,7 +147,7 @@ def update_item(
     responses=BaseController.get_error_responses(),
 )
 def delete_item(
-    session: SessionDep, current_user: CurrentUser, item_id: int
+    session: SessionDep, current_user: CurrentWriter, item_id: int
 ) -> ResponseMessage:
     """
     Delete an item.

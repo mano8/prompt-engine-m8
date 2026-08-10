@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import uuid
 from collections.abc import Iterator
-from dataclasses import dataclass
 
 import pytest
 from sqlalchemy.pool import StaticPool
@@ -60,12 +59,34 @@ _ = _config_mod.settings
 _paths_mod.find_dotenv = _real_find_dotenv
 
 
-@dataclass
-class User:
-    """Minimal authenticated user shape used by route/controller tests."""
+from fastapi_m8 import UserModel  # noqa: E402
 
-    id: uuid.UUID
-    is_superuser: bool = False
+
+def make_user(
+    role: str = "writer",
+    *,
+    user_id: uuid.UUID | None = None,
+    is_superuser: bool = False,
+) -> UserModel:
+    """Build the principal a route actually receives.
+
+    The real ``UserModel``, not a stand-in: the role-tier guards read ``role``
+    through the SDK hierarchy and the model enforces the ``role``/
+    ``is_superuser`` truth table, so a fixture that faked either field could
+    assert an authorization outcome the service would never produce.
+    """
+    return UserModel(
+        id=user_id or uuid.uuid4(),
+        email=f"{role}-{uuid.uuid4().hex[:8]}@example.com",
+        role=role,
+        is_superuser=is_superuser,
+    )
+
+
+@pytest.fixture
+def user_factory():
+    """Build a principal of an arbitrary role inside a test."""
+    return make_user
 
 
 @pytest.fixture
@@ -74,18 +95,30 @@ def owner_id() -> uuid.UUID:
 
 
 @pytest.fixture
-def owner(owner_id: uuid.UUID) -> User:
-    return User(id=owner_id)
+def owner(owner_id: uuid.UUID) -> UserModel:
+    """Authoring principal — writer, since every fixture use of it authors."""
+    return make_user("writer", user_id=owner_id)
 
 
 @pytest.fixture
-def other_user() -> User:
-    return User(id=uuid.uuid4())
+def other_user() -> UserModel:
+    return make_user("writer")
 
 
 @pytest.fixture
-def superuser() -> User:
-    return User(id=uuid.uuid4(), is_superuser=True)
+def reader() -> UserModel:
+    return make_user("reader")
+
+
+@pytest.fixture
+def plain_user() -> UserModel:
+    """Lowest tier: may read public records and nothing else."""
+    return make_user("user")
+
+
+@pytest.fixture
+def superuser() -> UserModel:
+    return make_user("superadmin", is_superuser=True)
 
 
 @pytest.fixture
