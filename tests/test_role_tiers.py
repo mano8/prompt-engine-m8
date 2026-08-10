@@ -30,8 +30,9 @@ from promt_engine_service.core.deps import (
     require_reader,
     require_writer,
 )
-from promt_engine_service.db_models.prompts import PromptBlock
+from promt_engine_service.db_models.prompts import PromptBlock, PromptTemplate
 from promt_engine_service.schemas.base import PromptBlockType
+from promt_engine_service.schemas.prompts import PromptBlockModel, PromptTemplateModel
 
 PREFIX = settings.API_PREFIX
 
@@ -234,6 +235,32 @@ def test_public_read_never_widens_into_a_write(client, seeded_blocks) -> None:
     )
     assert response.status_code == 403
     assert response.json()["detail"] == "Not enough permissions"
+
+
+def test_records_are_private_unless_they_opt_in(client, session) -> None:
+    """Public is opt-in, on every model and at every layer.
+
+    Since the read tiers admit the ``USER`` principal to public records, a
+    default of ``True`` anywhere on this path would publish records nobody
+    chose to publish. Asserted on the table models *and* on the API payloads,
+    because a create goes through the payload default, not the column one.
+    """
+    assert PromptBlock().is_public is False
+    assert PromptTemplate().is_public is False
+    assert PromptBlockModel.model_fields["is_public"].default is False
+    assert PromptTemplateModel.model_fields["is_public"].default is False
+
+    created = client.post(
+        f"{PREFIX}/prompt-template/add/",
+        headers=_auth("writer"),
+        json={"name": "Unspecified"},
+    )
+    assert created.status_code == 200, created.text
+    assert created.json()["data"]["is_public"] is False
+
+    # ...and the record it just created is therefore invisible to a USER.
+    listed = client.get(f"{PREFIX}/prompt-template/", headers=_auth("user")).json()
+    assert listed["count"] == 0
 
 
 # --------------------------------------------------------------------------
