@@ -84,9 +84,9 @@ asyncpg==0.31.0 \
     --hash=sha256:f6b56b91bb0ffc328c4e3ed113136cddd9deefdf5f79ab448598b9772831df44 \
     --hash=sha256:f890de5e1e4f7e14023619399a471ce4b71f5418cd67a51853b9910fdfa73696
     # via -r promt_engine_service/requirements_base.txt
-auth-sdk-m8[config,events,fastapi,observability,security]==3.1.0 \
-    --hash=sha256:137675e43dec5426244527451a1da71b83125e77cdc893cb270ca845a1734df6 \
-    --hash=sha256:2215b2a0c599d22d9289fcc2b715e17734c13e9e852dc70554ddd227d8af7efb
+auth-sdk-m8[config,events,fastapi,observability,security]==3.1.2 \
+    --hash=sha256:767de565ca32d9c92f5725a226095fe42ff43fb2a308ad41b033ba6c1bea8e3d \
+    --hash=sha256:e86c4260f2dc1fdb9633a7243bdfd9f9acbd0a32563d39681fa226b38c64bdf6
     # via fastapi-m8
 bcrypt==5.0.0 \
     --hash=sha256:046ad6db88edb3c5ece4369af997938fb1c19d6a699b9c1b27b0db432faae4c4 \
@@ -319,9 +319,9 @@ fastapi==0.139.0 \
     # via
     #   auth-sdk-m8
     #   fastapi-m8
-fastapi-m8[db,mysql,postgres]==4.2.1 \
-    --hash=sha256:32033d64c0be9b42398d979fde4b97d3cc0cfdf352952d00053e4c60ac5891c8 \
-    --hash=sha256:b01b5e20e2d3546cd562f3e9245e0ccf1fb6fe10a5553ae284fce67e517871af
+fastapi-m8[db,mysql,postgres]==4.2.2 \
+    --hash=sha256:1a3e5d8c33fed23432c8b7f544cbb07b50ee03de640a9d301658a3305ef84859 \
+    --hash=sha256:6020bfeaca5c2ce058d01f98e948e49b1342d7f78b489b77a567ae78bcb290f5
     # via -r promt_engine_service/requirements_base.txt
 google-auth==2.55.1 \
     --hash=sha256:eada68dfd52b3b81191827601e2a0c3fa12540c818534b630ddc5355769c3995 \

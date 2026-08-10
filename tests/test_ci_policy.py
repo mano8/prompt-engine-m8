@@ -22,8 +22,11 @@ def _action_lines(path: Path) -> list[str]:
 
 # ── single CI gate ────────────────────────────────────────────────────────────
 
+
 def test_no_duplicate_ci_yml() -> None:
-    assert not (WORKFLOWS / "ci.yml").exists(), "Legacy ci.yml must be removed — use CI.yaml only"
+    assert not (WORKFLOWS / "ci.yml").exists(), (
+        "Legacy ci.yml must be removed — use CI.yaml only"
+    )
 
 
 def test_ci_yaml_exists() -> None:
@@ -32,58 +35,75 @@ def test_ci_yaml_exists() -> None:
 
 # ── SHA-pinned actions ────────────────────────────────────────────────────────
 
+
 def test_ci_yaml_actions_are_sha_pinned() -> None:
     for line in _action_lines(CI_YAML):
-        assert _SHA_PIN_RE.search(line), f"CI.yaml action not SHA-pinned: {line.strip()}"
+        assert _SHA_PIN_RE.search(line), (
+            f"CI.yaml action not SHA-pinned: {line.strip()}"
+        )
 
 
 def test_publish_yaml_actions_are_sha_pinned() -> None:
     for line in _action_lines(PUBLISH_YAML):
-        assert _SHA_PIN_RE.search(line), f"docker-publish.yaml action not SHA-pinned: {line.strip()}"
+        assert _SHA_PIN_RE.search(line), (
+            f"docker-publish.yaml action not SHA-pinned: {line.strip()}"
+        )
 
 
 # ── Publish workflow supply-chain features ────────────────────────────────────
 
+
 def test_publish_yaml_has_oidc_permission() -> None:
     content = PUBLISH_YAML.read_text()
-    assert "id-token: write" in content, "docker-publish.yaml must grant id-token:write for OIDC signing"
+    assert "id-token: write" in content, (
+        "docker-publish.yaml must grant id-token:write for OIDC signing"
+    )
 
 
 def test_publish_yaml_has_attestations_permission() -> None:
     content = PUBLISH_YAML.read_text()
-    assert "attestations: write" in content, "docker-publish.yaml must grant attestations:write"
+    assert "attestations: write" in content, (
+        "docker-publish.yaml must grant attestations:write"
+    )
 
 
 def test_publish_yaml_has_sbom_step() -> None:
     content = PUBLISH_YAML.read_text()
-    assert "anchore/sbom-action" in content, "docker-publish.yaml must include anchore/sbom-action SBOM step"
+    assert "anchore/sbom-action" in content, (
+        "docker-publish.yaml must include anchore/sbom-action SBOM step"
+    )
 
 
 def test_publish_yaml_has_provenance() -> None:
     content = PUBLISH_YAML.read_text()
-    assert "provenance: mode=max" in content, "docker-publish.yaml must set provenance: mode=max"
+    assert "provenance: mode=max" in content, (
+        "docker-publish.yaml must set provenance: mode=max"
+    )
 
 
 def test_publish_yaml_has_cosign_sign() -> None:
     content = PUBLISH_YAML.read_text()
-    assert "cosign sign" in content, "docker-publish.yaml must include keyless cosign sign step"
+    assert "cosign sign" in content, (
+        "docker-publish.yaml must include keyless cosign sign step"
+    )
 
 
 # ── Contract settings ─────────────────────────────────────────────────────────
 
-def test_contract_version_is_1_0() -> None:
+
+def test_contract_version_is_2_0() -> None:
     from promt_engine_service.core.config import settings
 
-    assert settings.CONTRACT_VERSION == "1.0", (
-        f"CONTRACT_VERSION must be '1.0', got {settings.CONTRACT_VERSION!r}"
+    assert settings.CONTRACT_VERSION == "2.0.0", (
+        f"CONTRACT_VERSION must be '2.0.0', got {settings.CONTRACT_VERSION!r}"
     )
 
 
-def test_contract_range_is_1_x() -> None:
+def test_contract_range_is_2_x() -> None:
     from promt_engine_service.core.config import settings
 
-    assert settings.CONTRACT_RANGE == ">=1.1.0 <2.0.0", (
-        f"CONTRACT_RANGE must be '>=1.1.0 <2.0.0', got {settings.CONTRACT_RANGE!r}"
+    assert settings.CONTRACT_RANGE == ">=2.0.0 <3.0.0", (
+        f"CONTRACT_RANGE must be '>=2.0.0 <3.0.0', got {settings.CONTRACT_RANGE!r}"
     )
 
 
