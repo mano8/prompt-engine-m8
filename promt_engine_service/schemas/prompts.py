@@ -13,7 +13,7 @@ from pydantic import (
 from slugify import slugify
 from typing_extensions import Annotated, TypedDict
 
-from auth_sdk_m8.schemas.shared import ValidationConstants
+from fastapi_m8 import ValidationConstants
 from promt_engine_service.schemas.base import PromptBlockType
 
 

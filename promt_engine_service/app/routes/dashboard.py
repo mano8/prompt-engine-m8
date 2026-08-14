@@ -4,7 +4,7 @@ DashBoard routes
 
 from fastapi import APIRouter, Depends
 from promt_engine_service.app.deps import CurrentWriter, SessionDep, require_writer
-from auth_sdk_m8.controllers.base import BaseController
+from fastapi_m8 import BaseController
 from promt_engine_service.controllers.dashboard import DashboardController
 from promt_engine_service.schemas.dashboard import RangeActivityType, UsersActivity
 

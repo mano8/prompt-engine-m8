@@ -57,9 +57,10 @@ def has_reader_privileges(current_user: UserModel) -> bool:
     Delegates to the SDK-built reader guard rather than re-deriving the role
     hierarchy locally: ``require_reader`` is a plain callable whose only failure
     mode is the ``403`` it raises, so calling it directly is the canonical
-    check. ``has_minimum_role``/``RoleType`` are the obvious alternative, but a
-    consumer reaches the auth SDK only through ``fastapi_m8`` (F5) and neither
-    symbol is re-exported there yet (A18).
+    check. ``has_minimum_role``/``RoleType`` (both re-exported by ``fastapi_m8``
+    as of A18) are the obvious alternative, but ``require_reader`` already
+    encodes the same threshold, so calling it directly avoids a second
+    equivalent check.
     """
     try:
         require_reader(current_user)

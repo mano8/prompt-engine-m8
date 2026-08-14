@@ -18,8 +18,7 @@ from promt_engine_service.db_models.categories import (
     CategoryUpdate,
     CategoriesPublic,
 )
-from auth_sdk_m8.schemas.base import ResponseMessage, ResponseModelBase
-from auth_sdk_m8.controllers.base import BaseController
+from fastapi_m8 import BaseController, ResponseMessage, ResponseModelBase
 
 # Router floor: reader. A category carries no ``is_public`` column, so there is
 # no public view of one — every read here is an owned read, and a route added

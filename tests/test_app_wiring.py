@@ -115,7 +115,7 @@ def test_metrics_endpoint_registration(monkeypatch) -> None:
     assert not router.routes
 
     monkeypatch.setattr(
-        "auth_sdk_m8.observability.metrics.render",
+        "fastapi_m8.render_metrics",
         lambda: (b"metrics", "text/plain"),
     )
     main._register_metrics_endpoint(router, enabled=True, credential=None)

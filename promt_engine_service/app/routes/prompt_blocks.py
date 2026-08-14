@@ -5,8 +5,7 @@ from typing import Any, Union
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import func, select
 
-from auth_sdk_m8.controllers.base import BaseController
-from auth_sdk_m8.schemas.base import ResponseMessage, ResponseModelBase
+from fastapi_m8 import BaseController, ResponseMessage, ResponseModelBase
 from promt_engine_service.app.deps import (
     CurrentPrincipal,
     CurrentWriter,

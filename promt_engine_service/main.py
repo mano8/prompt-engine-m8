@@ -9,13 +9,13 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlmodel import select
 
-from auth_sdk_m8.security.guards import make_scrape_credential_guard
 from fastapi_m8 import (
     AppLifecycle,
     HealthCheckResult,
     HealthConfig,
     HealthStatus,
     create_app,
+    make_scrape_credential_guard,
 )
 
 from promt_engine_service.app.main import api_router as domain_router
@@ -53,7 +53,7 @@ def _register_metrics_endpoint(
     if not enabled:
         return
 
-    from auth_sdk_m8.observability.metrics import render as _render_metrics  # noqa: PLC0415
+    from fastapi_m8 import render_metrics as _render_metrics  # noqa: PLC0415
 
     guard = make_scrape_credential_guard(credential)
 

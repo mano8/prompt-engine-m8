@@ -8,8 +8,7 @@ from typing import Any, Protocol, cast
 from sqlalchemy import case, and_
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlmodel import Session, select, func
-from auth_sdk_m8.controllers.base import BaseController
-from fastapi_m8 import UserModel
+from fastapi_m8 import BaseController, UserModel
 from promt_engine_service.schemas.dashboard import (
     ActivityStats,
     RangeActivityType,
