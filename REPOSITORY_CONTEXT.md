@@ -13,6 +13,10 @@ Transform templates into optimized prompts.
 - Prefer stateless transformation logic.
 - Do not couple the service to external services.
 - Remain deterministic where possible.
+- `auth-sdk-m8` is never imported directly in service code — only `fastapi-m8`
+  and its re-exports are. `ruff.toml` enforces this with a `TID251`
+  banned-api rule (`auth_sdk_m8`); `ruff check .` fails on any direct import
+  outside `tests/`.
 
 ## Standalone authority
 
