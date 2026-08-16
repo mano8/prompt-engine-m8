@@ -4,6 +4,11 @@ All notable changes to prompt-engine-m8 are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- **`fastapi-m8` floor raised `>=4.3.0,<5.0.0` → `>=4.4.0,<5.0.0`** now that `4.4.0` is published, and `constraints.txt` / `constraints-all.txt` / `requirements_prod.lock` regenerated against it. `auth-sdk-m8` moves `3.1.2` → `3.1.3` in those generated files **transitively only** — it stays undeclared in `requirements_base.txt`, per the operator ruling that a consumer depends on `fastapi-m8` and never on `auth-sdk-m8` directly. The two had to move together: `fastapi-m8 4.4.0` requires `auth-sdk-m8>=3.1.3`, so pinning `4.4.0` against the old `3.1.2` pin is a hard `ResolutionImpossible`.
+- `requirements_prod.lock` no longer carries `colorama` — a Windows-only transitive of `click` (`platform_system == "Windows"`) that entered the lock when it was regenerated on a Windows host. The production image is Linux, so the entry was never installable there; this lock was regenerated on Linux to match CI.
+
 ## [2.0.0] - 2026-08-10
 
 Consolidation of the fa-auth 2.0 stack-alignment work: supersedes the unreleased
