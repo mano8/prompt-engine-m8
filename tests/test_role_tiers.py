@@ -23,14 +23,18 @@ import jwt
 import pytest
 from fastapi.testclient import TestClient
 
+from fastapi_m8 import audit_api_key_routes
+
 from promt_engine_service.core.config import settings
 from promt_engine_service.core.deps import (
+    auth,
     get_db,
     require_admin,
     require_reader,
     require_writer,
 )
 from promt_engine_service.db_models.prompts import PromptBlock, PromptTemplate
+from promt_engine_service.main import app
 from promt_engine_service.schemas.base import PromptBlockType
 from promt_engine_service.schemas.prompts import PromptBlockModel, PromptTemplateModel
 
@@ -297,3 +301,18 @@ def test_no_route_carries_a_bare_authenticated_dependency_by_accident() -> None:
     assert [dep.dependency for dep in dashboard.router.dependencies] == [require_writer]
     for module in (prompt_blocks, prompt_templates):
         assert len(module.router.dependencies) == 1
+
+
+def test_no_route_depends_on_bare_api_key_principal() -> None:
+    """Wave 7 / A22 wiring lock (§3.3.1, APIKEY-CAP-01).
+
+    prompt-engine-m8 does not wire any API-key routes today —
+    API_KEY_INTROSPECTION_ENABLED is unset, so `auth.get_current_api_key_principal`
+    is `None` and this is a no-op audit. It stays load-bearing: the day a route is
+    added on the bare principal instead of `get_current_api_key_reader`/`_writer`,
+    this assertion is what catches it.
+    """
+    findings = audit_api_key_routes(
+        app, bare_dependency=auth.get_current_api_key_principal
+    )
+    assert findings == []
