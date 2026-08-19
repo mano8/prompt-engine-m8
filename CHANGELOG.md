@@ -4,6 +4,10 @@ All notable changes to prompt-engine-m8 are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **Declared list vocabulary (`C1`).** `promt_engine_service/schemas/list_params.py` names every value the list endpoints accept in `csrc`, `sort`, `order` and `f`, per resource, as enum members — so the allow-lists reach the OpenAPI document verbatim and a client can mirror them instead of guessing. `ListQueryController` in `controllers/prompts.py` is the single bridge from a declared name to a column or predicate, shared by all three list routes: an undeclared value is rejected, never silently ignored, and free-text `q` is bound as a parameter with `%`/`_` escaped rather than interpolated (`SEC-VALIDATE-UNTRUSTED-INPUT`). No route consumes this yet — `C2`/`C3` wire it.
+
 ### Changed
 
 - **`fastapi-m8` floor raised `>=4.3.0,<5.0.0` → `>=4.4.0,<5.0.0`** now that `4.4.0` is published, and `constraints.txt` / `constraints-all.txt` / `requirements_prod.lock` regenerated against it. `auth-sdk-m8` moves `3.1.2` → `3.1.3` in those generated files **transitively only** — it stays undeclared in `requirements_base.txt`, per the operator ruling that a consumer depends on `fastapi-m8` and never on `auth-sdk-m8` directly. The two had to move together: `fastapi-m8 4.4.0` requires `auth-sdk-m8>=3.1.3`, so pinning `4.4.0` against the old `3.1.2` pin is a hard `ResolutionImpossible`.

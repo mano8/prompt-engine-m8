@@ -6,15 +6,29 @@ from collections.abc import Iterable
 from typing import Any, Optional, cast
 
 from fastapi import HTTPException, status
-from sqlalchemy import ColumnElement, or_
+from sqlalchemy import ColumnElement, asc, desc, func, or_
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from promt_engine_service.core.deps import has_reader_privileges
+from promt_engine_service.db_models.categories import Category
 from promt_engine_service.db_models.prompts import (
     PromptBlock,
     PromptTemplate,
     TemplateBlock,
+)
+from promt_engine_service.schemas.base import PromptBlockType
+from promt_engine_service.schemas.list_params import (
+    FACET_SEPARATOR,
+    CategorySearchField,
+    CategorySortField,
+    ListSortOrder,
+    PromptBlockFacet,
+    PromptBlockSearchField,
+    PromptBlockSortField,
+    PromptTemplateFacet,
+    PromptTemplateSearchField,
+    PromptTemplateSortField,
 )
 from promt_engine_service.schemas.prompts import (
     DynamicBlock,
@@ -408,6 +422,227 @@ class PromptsController:
             item.position = index
             session.add(item)
         session.commit()
+
+
+#: Number of blocks attached to a template, as a correlated subquery so
+#: ``sort=block_count`` can be answered in SQL instead of in the browser.
+_TEMPLATE_BLOCK_COUNT = (
+    select(func.count(cast(Any, TemplateBlock.id)))  # pylint: disable=not-callable
+    .where(cast(Any, TemplateBlock.template_id) == PromptTemplate.id)
+    .correlate(cast(Any, PromptTemplate))
+    .scalar_subquery()
+)
+
+
+class ListQueryController:
+    """Turn the declared list vocabulary into SQL, for all three list routes.
+
+    The maps below are the only bridge between a caller-supplied name and a
+    column: a value that is not a key here never reaches the query, and one
+    that is reaches it as a column object rather than as text. Free-text ``q``
+    is bound as a parameter. That is what makes ``q``/``csrc``/``sort``/``f``
+    safe to accept at the trust boundary (`SEC-VALIDATE-UNTRUSTED-INPUT`).
+
+    Keeping all three resources here — rather than one map per route module —
+    is deliberate: three copies of an allow-list drift, and a drifted
+    allow-list is indistinguishable from a missing one until something is
+    already wrong.
+    """
+
+    BLOCK_SEARCH_COLUMNS: dict[PromptBlockSearchField, Any] = {
+        PromptBlockSearchField.NAME: PromptBlock.name,
+        PromptBlockSearchField.SLUG: PromptBlock.slug,
+        PromptBlockSearchField.DESCRIPTION: PromptBlock.description,
+        PromptBlockSearchField.CONTENT: PromptBlock.content,
+    }
+    BLOCK_SORT_COLUMNS: dict[PromptBlockSortField, Any] = {
+        PromptBlockSortField.ID: PromptBlock.id,
+        PromptBlockSortField.NAME: PromptBlock.name,
+        PromptBlockSortField.SLUG: PromptBlock.slug,
+        PromptBlockSortField.TYPE: PromptBlock.type,
+        PromptBlockSortField.IS_DYNAMIC: PromptBlock.is_dynamic,
+        PromptBlockSortField.IS_PUBLIC: PromptBlock.is_public,
+        PromptBlockSortField.CREATED_AT: PromptBlock.created_at,
+        PromptBlockSortField.UPDATED_AT: PromptBlock.updated_at,
+    }
+    BLOCK_FACET_PREDICATES: dict[PromptBlockFacet, Any] = {
+        PromptBlockFacet.ROLE: PromptBlock.type == PromptBlockType.ROLE,
+        PromptBlockFacet.TASK: PromptBlock.type == PromptBlockType.TASK,
+        PromptBlockFacet.CONTEXT: PromptBlock.type == PromptBlockType.CONTEXT,
+        PromptBlockFacet.INSTRUCTION: PromptBlock.type == PromptBlockType.INSTRUCTION,
+        PromptBlockFacet.EXAMPLE: PromptBlock.type == PromptBlockType.EXAMPLE,
+        PromptBlockFacet.FORMAT: PromptBlock.type == PromptBlockType.FORMAT,
+        PromptBlockFacet.DYNAMIC: cast(Any, PromptBlock.is_dynamic).is_(True),
+        PromptBlockFacet.STATIC: cast(Any, PromptBlock.is_dynamic).is_(False),
+        PromptBlockFacet.PUBLIC: cast(Any, PromptBlock.is_public).is_(True),
+        PromptBlockFacet.PRIVATE: cast(Any, PromptBlock.is_public).is_(False),
+    }
+
+    TEMPLATE_SEARCH_COLUMNS: dict[PromptTemplateSearchField, Any] = {
+        PromptTemplateSearchField.NAME: PromptTemplate.name,
+        PromptTemplateSearchField.SLUG: PromptTemplate.slug,
+        PromptTemplateSearchField.DESCRIPTION: PromptTemplate.description,
+    }
+    TEMPLATE_SORT_COLUMNS: dict[PromptTemplateSortField, Any] = {
+        PromptTemplateSortField.ID: PromptTemplate.id,
+        PromptTemplateSortField.NAME: PromptTemplate.name,
+        PromptTemplateSortField.SLUG: PromptTemplate.slug,
+        PromptTemplateSortField.IS_PUBLIC: PromptTemplate.is_public,
+        PromptTemplateSortField.BLOCK_COUNT: _TEMPLATE_BLOCK_COUNT,
+        PromptTemplateSortField.CREATED_AT: PromptTemplate.created_at,
+        PromptTemplateSortField.UPDATED_AT: PromptTemplate.updated_at,
+    }
+    TEMPLATE_FACET_PREDICATES: dict[PromptTemplateFacet, Any] = {
+        PromptTemplateFacet.PUBLIC: cast(Any, PromptTemplate.is_public).is_(True),
+        PromptTemplateFacet.PRIVATE: cast(Any, PromptTemplate.is_public).is_(False),
+    }
+
+    CATEGORY_SEARCH_COLUMNS: dict[CategorySearchField, Any] = {
+        CategorySearchField.NAME: Category.name,
+        CategorySearchField.SLUG: Category.slug,
+    }
+    CATEGORY_SORT_COLUMNS: dict[CategorySortField, Any] = {
+        CategorySortField.ID: Category.id,
+        CategorySortField.NAME: Category.name,
+        CategorySortField.SLUG: Category.slug,
+        CategorySortField.TYPE: Category.type,
+        CategorySortField.CREATED_AT: Category.created_at,
+        CategorySortField.UPDATED_AT: Category.updated_at,
+    }
+
+    @staticmethod
+    def search_predicate(
+        columns: dict[Any, Any],
+        q: str,
+        csrc: Optional[Any] = None,
+    ) -> Optional[ColumnElement[bool]]:
+        """Match *q* case-insensitively, in one column or across them all.
+
+        The term is lowered on both sides so the result does not depend on the
+        database's collation, and it is passed to ``contains`` — a bound
+        parameter with ``%``/``_`` escaped — never formatted into SQL.
+        """
+        term = q.strip().lower()
+        if not term:
+            return None
+        selected = [columns[csrc]] if csrc is not None else list(columns.values())
+        return or_(
+            *(func.lower(column).contains(term, autoescape=True) for column in selected)
+        )
+
+    @staticmethod
+    def parse_facets(raw: str, facet_type: Any, resource: str) -> list[Any]:
+        """Resolve ``f`` into declared facet members, rejecting anything else.
+
+        Empty segments are dropped rather than rejected, so the empty default a
+        faceted-filter control sends means "no filter". Any other undeclared
+        value is a ``422``: a silently ignored filter renders a control that
+        does nothing, which is the failure this contract exists to remove.
+        """
+        selected: list[Any] = []
+        for chunk in raw.split(FACET_SEPARATOR):
+            name = chunk.strip()
+            if not name:
+                continue
+            try:
+                member = facet_type(name)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail=(
+                        f"Unknown {resource} filter value {name!r}. "
+                        f"Allowed: {', '.join(item.value for item in facet_type)}."
+                    ),
+                ) from None
+            if member not in selected:
+                selected.append(member)
+        return selected
+
+    @staticmethod
+    def facet_predicate(
+        facets: list[Any], predicates: dict[Any, Any]
+    ) -> Optional[ColumnElement[bool]]:
+        """Combine selected facets with ``OR``, matching the filter control."""
+        if not facets:
+            return None
+        return or_(*(predicates[facet] for facet in facets))
+
+    @staticmethod
+    def order_clause(columns: dict[Any, Any], sort: Any, order: ListSortOrder) -> Any:
+        """Return the ``ORDER BY`` clause for an allow-listed column."""
+        column = columns[sort]
+        return desc(column) if order is ListSortOrder.DESC else asc(column)
+
+    @classmethod
+    def prompt_block_predicates(
+        cls,
+        *,
+        q: str,
+        csrc: Optional[PromptBlockSearchField],
+        f: str,
+    ) -> list[ColumnElement[bool]]:
+        """Search and facet predicates for ``GET /prompt-block/``."""
+        return cls._predicates(
+            search_columns=cls.BLOCK_SEARCH_COLUMNS,
+            facet_predicates=cls.BLOCK_FACET_PREDICATES,
+            facet_type=PromptBlockFacet,
+            resource="prompt-block",
+            q=q,
+            csrc=csrc,
+            f=f,
+        )
+
+    @classmethod
+    def prompt_template_predicates(
+        cls,
+        *,
+        q: str,
+        csrc: Optional[PromptTemplateSearchField],
+        f: str,
+    ) -> list[ColumnElement[bool]]:
+        """Search and facet predicates for ``GET /prompt-template/``."""
+        return cls._predicates(
+            search_columns=cls.TEMPLATE_SEARCH_COLUMNS,
+            facet_predicates=cls.TEMPLATE_FACET_PREDICATES,
+            facet_type=PromptTemplateFacet,
+            resource="prompt-template",
+            q=q,
+            csrc=csrc,
+            f=f,
+        )
+
+    @classmethod
+    def category_predicates(cls, *, q: str) -> list[ColumnElement[bool]]:
+        """Search predicates for ``GET /category/``.
+
+        The category endpoint declares no ``csrc`` and no facets, so ``q``
+        always scans the declared category columns.
+        """
+        search = cls.search_predicate(cls.CATEGORY_SEARCH_COLUMNS, q)
+        return [] if search is None else [search]
+
+    @classmethod
+    def _predicates(
+        cls,
+        *,
+        search_columns: dict[Any, Any],
+        facet_predicates: dict[Any, Any],
+        facet_type: Any,
+        resource: str,
+        q: str,
+        csrc: Optional[Any],
+        f: str,
+    ) -> list[ColumnElement[bool]]:
+        predicates: list[ColumnElement[bool]] = []
+        search = cls.search_predicate(search_columns, q, csrc)
+        if search is not None:
+            predicates.append(search)
+        facets = cls.facet_predicate(
+            cls.parse_facets(f, facet_type, resource), facet_predicates
+        )
+        if facets is not None:
+            predicates.append(facets)
+        return predicates
 
 
 # Backwards-compatible name for existing imports/tests that used the typo.
