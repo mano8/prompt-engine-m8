@@ -1,4 +1,4 @@
-"""`C2` — the list endpoints honour the declared vocabulary over HTTP.
+"""`C2`/`C3` — the list endpoints honour the declared vocabulary over HTTP.
 
 Everything here goes through the real app, because the layer under test *is*
 the HTTP layer: query-string parsing, enum coercion and FastAPI's own ``422``
@@ -18,16 +18,18 @@ import uuid
 import pytest
 
 from promt_engine_service.core.config import settings
+from promt_engine_service.db_models.categories import Category
 from promt_engine_service.db_models.prompts import (
     PromptBlock,
     PromptTemplate,
     TemplateBlock,
 )
-from promt_engine_service.schemas.base import PromptBlockType
+from promt_engine_service.schemas.base import CategoryType, PromptBlockType
 
 PREFIX = settings.API_PREFIX
 BLOCKS = f"{PREFIX}/prompt-block/"
 TEMPLATES = f"{PREFIX}/prompt-template/"
+CATEGORIES = f"{PREFIX}/category/"
 
 
 @pytest.fixture
@@ -422,3 +424,107 @@ def test_the_template_vocabulary_is_its_own(
     """A block value is not a template value: ``content`` and ``dynamic``
     exist on blocks and nowhere else, so the template endpoint refuses them."""
     assert client.get(TEMPLATES, params=params, headers=headers).status_code == 422
+
+
+# --------------------------------------------------------------------------
+# Categories (`C3`).
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def seeded_categories(session, owner_uuid) -> None:
+    session.add_all(
+        [
+            Category(
+                name="Writing",
+                slug="writing",
+                type=CategoryType.PROMPT_BLOCK,
+                owner_id=owner_uuid,
+            ),
+            Category(
+                name="Review",
+                slug="review",
+                type=CategoryType.PROMPT_TEMPLATE,
+                owner_id=owner_uuid,
+            ),
+            Category(
+                name="Analysis",
+                slug="analysis",
+                type=CategoryType.PROMPT_BLOCK,
+                owner_id=owner_uuid,
+            ),
+        ]
+    )
+    session.commit()
+
+
+def test_category_search_filters_and_counts(client, headers, seeded_categories) -> None:
+    body = client.get(CATEGORIES, params={"q": "review"}, headers=headers).json()
+    assert slugs(body) == ["review"]
+    assert body["count"] == 1
+
+
+def test_category_sort_and_order(client, headers, seeded_categories) -> None:
+    ascending = client.get(CATEGORIES, params={"sort": "name"}, headers=headers).json()
+    descending = client.get(
+        CATEGORIES, params={"sort": "name", "order": "desc"}, headers=headers
+    ).json()
+
+    assert slugs(ascending) == ["analysis", "review", "writing"]
+    assert slugs(descending) == ["writing", "review", "analysis"]
+
+
+def test_category_visibility_split_survives_the_new_parameters(
+    client, auth_headers, session, owner_uuid, seeded_categories
+) -> None:
+    """Filtering must not widen what a non-superuser can see.
+
+    The owner-vs-superuser split predates this contract; a search that returned
+    another user's category would be a far worse defect than the missing search
+    it replaced.
+    """
+    session.add(
+        Category(
+            name="Stranger review",
+            slug="stranger-review",
+            type=CategoryType.PROMPT_BLOCK,
+            owner_id=uuid.uuid4(),
+        )
+    )
+    session.commit()
+
+    owned = client.get(
+        CATEGORIES, params={"q": "review"}, headers=auth_headers("writer", owner_uuid)
+    ).json()
+    everything = client.get(
+        CATEGORIES,
+        params={"q": "review"},
+        headers=auth_headers("superadmin", is_superuser=True),
+    ).json()
+
+    assert slugs(owned) == ["review"]
+    assert owned["count"] == 1
+    assert sorted(slugs(everything)) == ["review", "stranger-review"]
+    assert everything["count"] == 2
+
+
+@pytest.mark.parametrize("params", [{"sort": "owner_id"}, {"order": "sideways"}])
+def test_undeclared_category_values_are_rejected(
+    client, headers, seeded_categories, params
+) -> None:
+    assert client.get(CATEGORIES, params=params, headers=headers).status_code == 422
+
+
+def test_the_category_endpoint_declares_no_csrc_or_facets(
+    client, headers, seeded_categories
+) -> None:
+    """Undeclared *parameters* are ignored by FastAPI rather than rejected.
+
+    That is framework behaviour, not a contract hole — the point of the empty
+    tuples in ``CATEGORY_LIST_VOCABULARY`` is that a client never sends these.
+    Asserted so the day the endpoint grows them, this test is what changes.
+    """
+    body = client.get(
+        CATEGORIES, params={"csrc": "name", "f": "public"}, headers=headers
+    ).json()
+    assert body["count"] == 3
