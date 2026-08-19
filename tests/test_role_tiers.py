@@ -9,7 +9,9 @@ that a test forgot to install it.
 
 The matrix the operator specified:
 
-* ``WRITER`` and above — add, edit and delete owned records; dashboard.
+* ``ADMIN`` and above — the dashboard (operator decision ``D-C2``; it was
+  ``WRITER`` under A15).
+* ``WRITER`` and above — add, edit and delete owned records.
 * ``READER`` and above — owned lists and owned items.
 * ``USER`` — public items only, nothing else.
 """
@@ -86,6 +88,7 @@ def seeded_blocks(session) -> dict[str, PromptBlock]:
         ("user", *DASHBOARD),
         ("reader", *MUTATION),
         ("reader", *DASHBOARD),
+        ("writer", *DASHBOARD),
     ],
 )
 def test_principal_below_the_floor_is_denied(
@@ -117,8 +120,8 @@ def test_every_route_requires_authentication(client, method, path) -> None:
         ("reader", *OWNED_READ),
         ("writer", *OWNED_READ),
         ("writer", *MUTATION),
-        ("writer", *DASHBOARD),
         ("admin", *MUTATION),
+        ("admin", *DASHBOARD),
     ],
 )
 def test_principal_at_or_above_the_floor_is_admitted(
@@ -260,7 +263,7 @@ def test_no_route_carries_a_bare_authenticated_dependency_by_accident() -> None:
     )
 
     assert [dep.dependency for dep in category.router.dependencies] == [require_reader]
-    assert [dep.dependency for dep in dashboard.router.dependencies] == [require_writer]
+    assert [dep.dependency for dep in dashboard.router.dependencies] == [require_admin]
     for module in (prompt_blocks, prompt_templates):
         assert len(module.router.dependencies) == 1
 
