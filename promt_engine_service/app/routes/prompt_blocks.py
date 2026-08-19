@@ -1,8 +1,8 @@
 """Prompt block routes."""
 
-from typing import Any, Union
+from typing import Annotated, Any, Union
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import func, select
 
 from fastapi_m8 import BaseController, ResponseMessage, ResponseModelBase
@@ -12,8 +12,17 @@ from promt_engine_service.app.deps import (
     SessionDep,
     get_current_user,
 )
-from promt_engine_service.controllers.prompts import PromptsController
+from promt_engine_service.controllers.prompts import (
+    ListQueryController,
+    PromptsController,
+)
 from promt_engine_service.db_models.prompts import PromptBlock, PromptBlocksPublic
+from promt_engine_service.schemas.list_params import (
+    MAX_SEARCH_LENGTH,
+    PromptBlockSearchParam,
+    PromptBlockSortParam,
+    SortOrderParam,
+)
 from promt_engine_service.schemas.prompts import PromptBlockModel
 
 # Router floor: authentication. The read routes below deliberately admit the
@@ -36,21 +45,50 @@ router = APIRouter(
 def prompt_block_list(
     session: SessionDep,
     current_user: CurrentPrincipal,
-    skip: int = 0,
-    limit: int = 100,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1)] = 100,
+    q: Annotated[str, Query(max_length=MAX_SEARCH_LENGTH)] = "",
+    csrc: PromptBlockSearchParam = None,
+    sort: PromptBlockSortParam = None,
+    order: SortOrderParam = None,
+    f: Annotated[str, Query(max_length=MAX_SEARCH_LENGTH)] = "",
 ) -> Any:
-    """Retrieve prompt blocks visible to the current user."""
+    """Retrieve prompt blocks visible to the current user.
+
+    ``q`` searches every declared block column, or only ``csrc`` when one is
+    named; ``f`` carries comma-joined facet values combined with ``OR``;
+    ``sort``/``order`` order the page. Every value is allow-listed by
+    ``ListQueryController`` — an undeclared one is a ``422``.
+
+    ``count`` is the count of the **filtered** set, not of everything visible.
+    That is the point of the parameters: a paginator driven by an unfiltered
+    count reports pages that do not exist. With none of the new parameters
+    present the response is byte-for-byte what ``skip``/``limit`` always
+    returned, ordering included — an absent ``sort`` adds no ``ORDER BY``.
+    """
     try:
-        statement = select(PromptBlock).offset(skip).limit(limit)
+        statement = select(PromptBlock)
         count_statement = select(func.count()).select_from(PromptBlock)
+        predicates = ListQueryController.prompt_block_predicates(q=q, csrc=csrc, f=f)
         visibility = PromptsController.visibility_filter(PromptBlock, current_user)
         if visibility is not None:
-            statement = statement.where(visibility)
-            count_statement = count_statement.where(visibility)
+            predicates.append(visibility)
+        for predicate in predicates:
+            statement = statement.where(predicate)
+            count_statement = count_statement.where(predicate)
+        if sort is not None:
+            statement = statement.order_by(
+                ListQueryController.order_clause(
+                    ListQueryController.BLOCK_SORT_COLUMNS, sort, order
+                )
+            )
+        statement = statement.offset(skip).limit(limit)
         return PromptBlocksPublic(
             data=session.exec(statement).all(),
             count=session.exec(count_statement).one(),
         )
+    except HTTPException:
+        raise
     except Exception as ex:
         return BaseController.handle_exception(ex=ex, session=session)
 

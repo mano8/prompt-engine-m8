@@ -1,8 +1,8 @@
 """Prompt template routes."""
 
-from typing import Any, Optional, Union, cast
+from typing import Annotated, Any, Optional, Union, cast
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import selectinload
 from sqlmodel import func, select
 
@@ -13,8 +13,17 @@ from promt_engine_service.app.deps import (
     SessionDep,
     get_current_user,
 )
-from promt_engine_service.controllers.prompts import PromptsController
+from promt_engine_service.controllers.prompts import (
+    ListQueryController,
+    PromptsController,
+)
 from promt_engine_service.db_models.prompts import PromptTemplate, TemplateBlock
+from promt_engine_service.schemas.list_params import (
+    MAX_SEARCH_LENGTH,
+    PromptTemplateSearchParam,
+    PromptTemplateSortParam,
+    SortOrderParam,
+)
 from promt_engine_service.schemas.prompts import (
     DynamicBlock,
     PromptTemplateModel,
@@ -41,31 +50,54 @@ router = APIRouter(
 def prompt_template_list(
     session: SessionDep,
     current_user: CurrentPrincipal,
-    skip: int = 0,
-    limit: int = 100,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1)] = 100,
+    q: Annotated[str, Query(max_length=MAX_SEARCH_LENGTH)] = "",
+    csrc: PromptTemplateSearchParam = None,
+    sort: PromptTemplateSortParam = None,
+    order: SortOrderParam = None,
+    f: Annotated[str, Query(max_length=MAX_SEARCH_LENGTH)] = "",
 ) -> Any:
-    """Retrieve prompt templates visible to the current user."""
+    """Retrieve prompt templates visible to the current user.
+
+    Same list contract as ``GET /prompt-block/``, over the template
+    vocabulary, and with one addition: ``sort=block_count`` orders by how many
+    blocks a template carries, answered by a correlated subquery. The template
+    table offers that column to the user, so the service answers it rather
+    than leaving the control to sort one page against itself.
+
+    ``count`` is the count of the **filtered** set. With none of the new
+    parameters present the response is what ``skip``/``limit`` always
+    returned.
+    """
     try:
-        statement = (
-            select(PromptTemplate)
-            .options(
-                selectinload(cast(Any, PromptTemplate.blocks)).selectinload(
-                    cast(Any, TemplateBlock.block)
-                )
+        statement = select(PromptTemplate).options(
+            selectinload(cast(Any, PromptTemplate.blocks)).selectinload(
+                cast(Any, TemplateBlock.block)
             )
-            .offset(skip)
-            .limit(limit)
         )
         count_statement = select(func.count()).select_from(PromptTemplate)
+        predicates = ListQueryController.prompt_template_predicates(q=q, csrc=csrc, f=f)
         visibility = PromptsController.visibility_filter(PromptTemplate, current_user)
         if visibility is not None:
-            statement = statement.where(visibility)
-            count_statement = count_statement.where(visibility)
+            predicates.append(visibility)
+        for predicate in predicates:
+            statement = statement.where(predicate)
+            count_statement = count_statement.where(predicate)
+        if sort is not None:
+            statement = statement.order_by(
+                ListQueryController.order_clause(
+                    ListQueryController.TEMPLATE_SORT_COLUMNS, sort, order
+                )
+            )
+        statement = statement.offset(skip).limit(limit)
         items = session.exec(statement).all()
         return PromptTemplatesList(
             count=session.exec(count_statement).one(),
             data=PromptsController.dump_prompt_templates(items),
         )
+    except HTTPException:
+        raise
     except Exception as ex:
         return BaseController.handle_exception(ex=ex, session=session)
 

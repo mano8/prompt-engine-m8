@@ -18,8 +18,9 @@ answered none of them.
 """
 
 from enum import Enum
+from typing import Annotated, Any, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, BeforeValidator, ConfigDict
 
 #: Upper bound on ``q``. A free-text term is bound as a parameter, never
 #: interpolated, but an unbounded one is still an unbounded scan.
@@ -182,6 +183,32 @@ CATEGORY_LIST_VOCABULARY = ListVocabulary(
     sort=_values(CategorySortField),
     facets=(),
 )
+
+
+def blank_to_none(value: Any) -> Any:
+    """Read an empty query parameter as an absent one.
+
+    A table control that has nothing selected sends the parameter as an empty
+    string rather than omitting it. Empty means "no column chosen", which is
+    the default, not an undeclared value — rejecting it would make the honest
+    default a ``422`` while teaching nobody anything.
+    """
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
+
+
+#: Applied to every enum-typed list parameter, so "unset" and "absent" agree.
+BlankAsAbsent = BeforeValidator(blank_to_none)
+
+SortOrderParam = Annotated[Optional[ListSortOrder], BlankAsAbsent]
+PromptBlockSearchParam = Annotated[Optional[PromptBlockSearchField], BlankAsAbsent]
+PromptBlockSortParam = Annotated[Optional[PromptBlockSortField], BlankAsAbsent]
+PromptTemplateSearchParam = Annotated[
+    Optional[PromptTemplateSearchField], BlankAsAbsent
+]
+PromptTemplateSortParam = Annotated[Optional[PromptTemplateSortField], BlankAsAbsent]
+CategorySortParam = Annotated[Optional[CategorySortField], BlankAsAbsent]
 
 #: Every declared vocabulary, keyed by the route prefix that honours it.
 LIST_VOCABULARIES: dict[str, ListVocabulary] = {

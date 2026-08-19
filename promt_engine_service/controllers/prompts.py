@@ -568,8 +568,15 @@ class ListQueryController:
         return or_(*(predicates[facet] for facet in facets))
 
     @staticmethod
-    def order_clause(columns: dict[Any, Any], sort: Any, order: ListSortOrder) -> Any:
-        """Return the ``ORDER BY`` clause for an allow-listed column."""
+    def order_clause(
+        columns: dict[Any, Any], sort: Any, order: Optional[ListSortOrder]
+    ) -> Any:
+        """Return the ``ORDER BY`` clause for an allow-listed column.
+
+        ``order`` is optional because a caller may name a column without naming
+        a direction; ascending is the direction a table header shows on its
+        first click, so it is the one an unstated ``order`` means.
+        """
         column = columns[sort]
         return desc(column) if order is ListSortOrder.DESC else asc(column)
 

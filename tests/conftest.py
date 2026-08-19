@@ -136,3 +136,75 @@ def session() -> Iterator[Session]:
             yield db
     finally:
         engine.dispose()
+
+
+# --------------------------------------------------------------------------
+# HTTP-level fixtures.
+#
+# A contract is what a caller can reach over HTTP, so the tests that assert one
+# go through the real app: real query-string parsing, real ``Enum`` coercion,
+# the real HS256 validator and the real role guard. Only the database session
+# is replaced. Calling a route function in-process skips exactly the layer a
+# list contract lives in — every ``422`` below is produced by FastAPI, not by a
+# fixture agreeing with the handler.
+# --------------------------------------------------------------------------
+
+
+def make_access_token(
+    role: str, user_id: uuid.UUID, *, is_superuser: bool = False
+) -> str:
+    """Mint the access token the issuer would mint for *role*."""
+    import time
+
+    import jwt
+
+    from promt_engine_service.core.config import settings
+
+    now = int(time.time())
+    return jwt.encode(
+        {
+            "sub": str(user_id),
+            "type": "access",
+            "jti": uuid.uuid4().hex,
+            "iat": now,
+            "exp": now + 600,
+            "email": f"{role}@example.com",
+            "role": role,
+            "is_superuser": is_superuser,
+        },
+        settings.ACCESS_SECRET_KEY.get_secret_value(),
+        algorithm=settings.ACCESS_TOKEN_ALGORITHM,
+    )
+
+
+@pytest.fixture
+def auth_headers():
+    """Build an ``Authorization`` header for an arbitrary role."""
+
+    def _headers(
+        role: str, user_id: uuid.UUID | None = None, **kwargs
+    ) -> dict[str, str]:
+        token = make_access_token(role, user_id or uuid.uuid4(), **kwargs)
+        return {"Authorization": f"Bearer {token}"}
+
+    return _headers
+
+
+@pytest.fixture
+def client(session):
+    """The real app, with only the database session replaced.
+
+    Constructed without the context manager on purpose: entering it would run
+    the lifespan, which opens the configured Postgres engine and the auth event
+    stream. Neither is on the path these tests assert.
+    """
+    from fastapi.testclient import TestClient
+
+    import promt_engine_service.main as main
+    from promt_engine_service.core.deps import get_db
+
+    main.app.dependency_overrides[get_db] = lambda: session
+    try:
+        yield TestClient(main.app)
+    finally:
+        main.app.dependency_overrides.clear()
