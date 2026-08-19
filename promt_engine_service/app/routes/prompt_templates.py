@@ -19,6 +19,7 @@ from promt_engine_service.controllers.prompts import (
 )
 from promt_engine_service.db_models.prompts import PromptTemplate, TemplateBlock
 from promt_engine_service.schemas.list_params import (
+    PROMPT_TEMPLATE_LIST_VOCABULARY,
     MAX_SEARCH_LENGTH,
     PromptTemplateSearchParam,
     PromptTemplateSortParam,
@@ -56,7 +57,17 @@ def prompt_template_list(
     csrc: PromptTemplateSearchParam = None,
     sort: PromptTemplateSortParam = None,
     order: SortOrderParam = None,
-    f: Annotated[str, Query(max_length=MAX_SEARCH_LENGTH)] = "",
+    f: Annotated[
+        str,
+        Query(
+            max_length=MAX_SEARCH_LENGTH,
+            description=(
+                "Comma-joined facet values, combined with OR. Allowed: "
+                + ", ".join(PROMPT_TEMPLATE_LIST_VOCABULARY.facets)
+                + "."
+            ),
+        ),
+    ] = "",
 ) -> Any:
     """Retrieve prompt templates visible to the current user.
 
