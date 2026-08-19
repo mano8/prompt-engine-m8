@@ -10,6 +10,8 @@ All notable changes to prompt-engine-m8 are documented here.
 
 - **Server-driven list parameters on `GET /prompt-block/` and `GET /prompt-template/` (`C2`).** Both accept `q` (free-text over the declared columns), `csrc` (restrict `q` to one column), `f` (comma-joined facet values combined with `OR`), and `sort`/`order`. `sort=block_count` on templates orders by attached-block count via a correlated subquery. Additive: `skip`/`limit` behave exactly as before when the new parameters are absent, and an absent `sort` still adds no `ORDER BY`. `skip`/`limit` now reject negative/zero values with `422` instead of reaching the database.
 
+- **HTTP-level `POST /category/add/` coverage (`C4`).** The route has never had any. `CategoryCreate` still requires `type` — decision `D-C1` resolves `H2` on the client side, because the UI knows whether it is filing a block or a template category and a server-chosen default would be a guess. The new tests pin the required payload (`{name, type}`), the derived slug, the rejection of the `{name}`-only payload the client sends today, the writer floor, and that `owner_id` comes from the token rather than the body.
+
 - **Server-driven list parameters on `GET /category/` (`C3`).** `q` (free-text over `name`/`slug`) plus `sort`/`order`. A category carries no public flag and no faceted axis, so the endpoint declares no `csrc` and no `f` — the empty tuples in `CATEGORY_LIST_VOCABULARY` say so explicitly. The superuser-vs-owner visibility split is preserved and is now applied as a predicate alongside the search rather than by branching the whole query, so a filter cannot widen what a non-superuser sees.
 
 ### Changed
