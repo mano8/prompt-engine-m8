@@ -245,6 +245,8 @@ def test_sort_without_order_ascends(client, headers, seeded_blocks) -> None:
         {"f": "public,unknown"},
         {"skip": -1},
         {"limit": 0},
+        {"limit": 501},
+        {"limit": 100000000},
         {"q": "x" * 201},
     ],
 )

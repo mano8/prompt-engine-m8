@@ -26,6 +26,14 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict
 #: interpolated, but an unbounded one is still an unbounded scan.
 MAX_SEARCH_LENGTH = 200
 
+#: Upper bound on ``limit``. ``q`` compiles to a leading-wildcard ``LIKE`` over
+#: every declared column — ``content`` included, which is unindexed text — so
+#: the page a caller may ask for has to be bounded by something other than the
+#: caller. This bounds what a single request *materialises*; it does not bound
+#: the scan itself, which is a function of table size and indexing rather than
+#: of ``limit``. The tables page at 10/20/40, so this leaves wide headroom.
+MAX_PAGE_SIZE = 500
+
 #: ``f`` carries several facet values in one query parameter.
 FACET_SEPARATOR = ","
 

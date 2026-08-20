@@ -34,6 +34,7 @@ import pytest
 from promt_engine_service.core.config import settings
 from promt_engine_service.schemas.list_params import (
     CATEGORY_LIST_VOCABULARY,
+    MAX_PAGE_SIZE,
     PROMPT_BLOCK_LIST_VOCABULARY,
     PROMPT_TEMPLATE_LIST_VOCABULARY,
     ListSortOrder,
@@ -185,6 +186,46 @@ def test_every_declared_facet_is_accepted(
         f"{PREFIX}{path}", params={"f": ",".join(vocabulary.facets)}, headers=headers
     )
     assert joined.status_code == 200, joined.text
+
+
+# --------------------------------------------------------------------------
+# The page ceiling is published, and it is the declared one.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("path", "vocabulary"), LIST_ROUTES)
+def test_the_published_page_ceiling_is_the_declared_one(
+    spec, path: str, vocabulary: ListVocabulary
+) -> None:
+    """``limit`` publishes ``MAX_PAGE_SIZE`` as its maximum on every list route.
+
+    A ceiling a caller cannot read is a ceiling a caller discovers as a ``422``
+    in production. It reaches the document through ``le=``, so this asserts the
+    document rather than the annotation.
+    """
+    schema = list_parameters(spec, path)["limit"]["schema"]
+    assert schema["maximum"] == MAX_PAGE_SIZE, (path, schema)
+    assert schema["minimum"] == 1, (path, schema)
+
+
+@pytest.mark.parametrize(("path", "vocabulary"), LIST_ROUTES)
+def test_the_page_ceiling_holds_at_its_boundary(
+    client, headers, path: str, vocabulary: ListVocabulary
+) -> None:
+    """Exactly the ceiling is served; one past it is a ``422``.
+
+    Asserted at the boundary rather than with a round number, so raising
+    ``MAX_PAGE_SIZE`` cannot leave the declaration and the behaviour disagreeing.
+    """
+    at_ceiling = client.get(
+        f"{PREFIX}{path}", params={"limit": MAX_PAGE_SIZE}, headers=headers
+    )
+    assert at_ceiling.status_code == 200, at_ceiling.text
+
+    over_ceiling = client.get(
+        f"{PREFIX}{path}", params={"limit": MAX_PAGE_SIZE + 1}, headers=headers
+    )
+    assert over_ceiling.status_code == 422, over_ceiling.text
 
 
 # --------------------------------------------------------------------------

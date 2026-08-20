@@ -20,6 +20,7 @@ from promt_engine_service.db_models.categories import (
     CategoriesPublic,
 )
 from promt_engine_service.schemas.list_params import (
+    MAX_PAGE_SIZE,
     MAX_SEARCH_LENGTH,
     CategorySortParam,
     SortOrderParam,
@@ -46,7 +47,7 @@ async def read_root(
     session: SessionDep,
     current_user: CurrentReader,
     skip: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1)] = 100,
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = 100,
     q: Annotated[str, Query(max_length=MAX_SEARCH_LENGTH)] = "",
     sort: CategorySortParam = None,
     order: SortOrderParam = None,

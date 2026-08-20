@@ -19,6 +19,7 @@ from promt_engine_service.controllers.prompts import (
 from promt_engine_service.db_models.prompts import PromptBlock, PromptBlocksPublic
 from promt_engine_service.schemas.list_params import (
     PROMPT_BLOCK_LIST_VOCABULARY,
+    MAX_PAGE_SIZE,
     MAX_SEARCH_LENGTH,
     PromptBlockSearchParam,
     PromptBlockSortParam,
@@ -47,7 +48,7 @@ def prompt_block_list(
     session: SessionDep,
     current_user: CurrentPrincipal,
     skip: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1)] = 100,
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = 100,
     q: Annotated[str, Query(max_length=MAX_SEARCH_LENGTH)] = "",
     csrc: PromptBlockSearchParam = None,
     sort: PromptBlockSortParam = None,
