@@ -38,7 +38,7 @@ ENV PYTHONPATH=/opt:/opt/promt_engine_service
 
 RUN apt-get update \
     && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends curl=8.14.1-2+deb13u3 \
+    && apt-get install -y --no-install-recommends curl=8.14.1-2+deb13u4 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid 1000 appuser && \
