@@ -27,3 +27,4 @@ exclude_paths:
   - "docker_compose/**"
   - "AGENTS.md"
   - "CLAUDE.md"
+  - "REPOSITORY_CONTEXT.md"

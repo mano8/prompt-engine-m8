@@ -5,9 +5,9 @@ consumer wiring are inherited from ``ConsumerServiceSettings``.
 """
 
 from pathlib import Path
+from typing import ClassVar
 
-from auth_sdk_m8.utils.paths import find_dotenv
-from fastapi_m8 import ConsumerServiceSettings
+from fastapi_m8 import ConsumerServiceSettings, find_dotenv
 from pydantic_settings import SettingsConfigDict
 
 from promt_engine_service import __version__
@@ -16,7 +16,7 @@ from promt_engine_service import __version__
 class Settings(ConsumerServiceSettings):
     """promt_engine_service settings extending ConsumerServiceSettings."""
 
-    ENV_FILE_DIR: Path = Path(__file__).resolve().parent
+    ENV_FILE_DIR: ClassVar[Path] = Path(__file__).resolve().parent
 
     model_config = SettingsConfigDict(
         env_file=find_dotenv(Path(__file__).resolve().parent),
@@ -27,8 +27,8 @@ class Settings(ConsumerServiceSettings):
 
     SERVICE_VERSION: str = __version__
     CONTRACT_NAME: str = "prompt-engine-m8"
-    CONTRACT_VERSION: str = "0.0"
-    CONTRACT_RANGE: str = ">=0.0.1 <0.1.0"
+    CONTRACT_VERSION: str = "2.0.0"
+    CONTRACT_RANGE: str = ">=2.0.0 <3.0.0"
 
 
 try:

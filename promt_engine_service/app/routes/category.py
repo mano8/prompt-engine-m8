@@ -1,22 +1,40 @@
 """Category api routes."""
 
-from typing import Any, Optional, Union
-from fastapi import APIRouter, HTTPException
+from typing import Annotated, Any, Optional, Union
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import select
 from sqlmodel import func
 
-from promt_engine_service.app.deps import CurrentUser, SessionDep
+from promt_engine_service.app.deps import (
+    CurrentReader,
+    CurrentWriter,
+    SessionDep,
+    require_reader,
+)
 
+from promt_engine_service.controllers.prompts import ListQueryController
 from promt_engine_service.db_models.categories import (
     Category,
     CategoryCreate,
     CategoryUpdate,
     CategoriesPublic,
 )
-from auth_sdk_m8.schemas.base import ResponseMessage, ResponseModelBase
-from auth_sdk_m8.controllers.base import BaseController
+from promt_engine_service.schemas.list_params import (
+    MAX_PAGE_SIZE,
+    MAX_SEARCH_LENGTH,
+    CategorySortParam,
+    SortOrderParam,
+)
+from fastapi_m8 import BaseController, ResponseMessage, ResponseModelBase
 
-router = APIRouter(prefix="/category", tags=["category"])
+# Router floor: reader. A category carries no ``is_public`` column, so there is
+# no public view of one — every read here is an owned read, and a route added
+# later inherits that floor instead of having to remember it.
+router = APIRouter(
+    prefix="/category",
+    tags=["category"],
+    dependencies=[Depends(require_reader)],
+)
 # pylint: disable=broad-exception-caught, not-callable
 
 
@@ -26,31 +44,47 @@ router = APIRouter(prefix="/category", tags=["category"])
     responses=BaseController.get_error_responses(),
 )
 async def read_root(
-    session: SessionDep, current_user: CurrentUser, skip: int = 0, limit: int = 100
+    session: SessionDep,
+    current_user: CurrentReader,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = 100,
+    q: Annotated[str, Query(max_length=MAX_SEARCH_LENGTH)] = "",
+    sort: CategorySortParam = None,
+    order: SortOrderParam = None,
 ) -> Any:
-    """Retrieve category list."""
-    try:
-        if current_user.is_superuser:
-            count_statement = select(func.count()).select_from(Category)
-            count = session.exec(count_statement).one()
-            statement = select(Category).offset(skip).limit(limit)
-            items = session.exec(statement).all()
-        else:
-            count_statement = (
-                select(func.count())
-                .select_from(Category)
-                .where(Category.owner_id == current_user.id)
-            )
-            count = session.exec(count_statement).one()
-            statement = (
-                select(Category)
-                .where(Category.owner_id == current_user.id)
-                .offset(skip)
-                .limit(limit)
-            )
-            items = session.exec(statement).all()
+    """Retrieve category list.
 
-        return CategoriesPublic(data=items, count=count)
+    ``q`` searches the declared category columns and ``sort``/``order`` order
+    the page; ``count`` describes the **filtered** set. A category carries no
+    public flag and no faceted axis, so this endpoint declares no ``csrc`` and
+    no ``f`` — see ``CATEGORY_LIST_VOCABULARY``.
+
+    The superuser-vs-owner split is unchanged and is applied as a predicate
+    alongside the search rather than by branching the whole query, so a filter
+    can never widen what a non-superuser sees.
+    """
+    try:
+        predicates = ListQueryController.category_predicates(q=q)
+        if not current_user.is_superuser:
+            predicates.append(Category.owner_id == current_user.id)
+
+        statement = select(Category)
+        count_statement = select(func.count()).select_from(Category)
+        for predicate in predicates:
+            statement = statement.where(predicate)
+            count_statement = count_statement.where(predicate)
+        if sort is not None:
+            statement = statement.order_by(
+                ListQueryController.order_clause(
+                    ListQueryController.CATEGORY_SORT_COLUMNS, sort, order
+                )
+            )
+        statement = statement.offset(skip).limit(limit)
+
+        return CategoriesPublic(
+            data=session.exec(statement).all(),
+            count=session.exec(count_statement).one(),
+        )
     except Exception as ex:
         return BaseController.handle_exception(ex=ex, session=session)
 
@@ -60,7 +94,7 @@ async def read_root(
     response_model=Union[ResponseModelBase, ResponseMessage],
     responses=BaseController.get_error_responses(),
 )
-def read_item(session: SessionDep, current_user: CurrentUser, item_id: int) -> Any:
+def read_item(session: SessionDep, current_user: CurrentReader, item_id: int) -> Any:
     """
     Get item by ID.
     """
@@ -83,7 +117,7 @@ def read_item(session: SessionDep, current_user: CurrentUser, item_id: int) -> A
     responses=BaseController.get_error_responses(),
 )
 def create_item(
-    *, session: SessionDep, current_user: CurrentUser, item_in: CategoryCreate
+    *, session: SessionDep, current_user: CurrentWriter, item_in: CategoryCreate
 ) -> Any:
     """
     Create new item.
@@ -106,7 +140,7 @@ def create_item(
 def update_item(
     *,
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentWriter,
     item_id: int,
     item_in: CategoryUpdate,
 ) -> Any:
@@ -135,7 +169,7 @@ def update_item(
     responses=BaseController.get_error_responses(),
 )
 def delete_item(
-    session: SessionDep, current_user: CurrentUser, item_id: int
+    session: SessionDep, current_user: CurrentWriter, item_id: int
 ) -> ResponseMessage:
     """
     Delete an item.

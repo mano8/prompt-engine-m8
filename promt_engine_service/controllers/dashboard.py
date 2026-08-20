@@ -8,8 +8,7 @@ from typing import Any, Protocol, cast
 from sqlalchemy import case, and_
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlmodel import Session, select, func
-from auth_sdk_m8.controllers.base import BaseController
-from promt_engine_service.core.deps import CurrentUser
+from fastapi_m8 import BaseController, UserModel
 from promt_engine_service.schemas.dashboard import (
     ActivityStats,
     RangeActivityType,
@@ -80,7 +79,7 @@ class DashboardController:
     def get_activity_count_by_model(
         *,
         session: Session,
-        current_user: CurrentUser,
+        current_user: UserModel,
         time_range: RangeActivityType,
         is_current: bool = False,
     ) -> ActivityStats:
@@ -144,7 +143,7 @@ class DashboardController:
     @staticmethod
     def get_dash_users_stats(
         session: Session,
-        current_user: CurrentUser,
+        current_user: UserModel,
         time_range: RangeActivityType,
         is_current: bool = False,
     ) -> UsersActivity:
@@ -153,7 +152,7 @@ class DashboardController:
 
         Args:
             session (Session): The database session to use for queries.
-            current_user (CurrentUser): The current authenticated user.
+            current_user (UserModel): The current authenticated user.
             is_current (bool, optional):
                 Flag to determine if the current time range should be used.
                 Defaults to False.

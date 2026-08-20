@@ -345,7 +345,13 @@ def test_prompt_template_routes(session, owner, superuser) -> None:
 
 
 def test_prompt_template_route_http_errors_raise(session, owner, other_user) -> None:
-    template = PromptTemplate(name="Private", slug="private", owner_id=owner.id)
+    # Explicitly private, though it is also the default: a public template is
+    # readable by a non-owner by design (A15), so the denial this test asserts
+    # is the *private* one and the fixture should not depend on a default to
+    # say which case it is testing.
+    template = PromptTemplate(
+        name="Private", slug="private", owner_id=owner.id, is_public=False
+    )
     session.add(template)
     session.commit()
     session.refresh(template)

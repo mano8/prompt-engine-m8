@@ -34,6 +34,13 @@ DB_DATABASE=api_db
 DB_USER=changethis
 DB_PASSWORD=changethis
 
+# ── App secret ────────────────────────────────────────────────────────────────
+# Declared by auth-sdk-m8 CommonSettings for backward compatibility and read by
+# nothing in fastapi-m8 or auth-sdk-m8 today — token signing uses
+# ACCESS_SECRET_KEY (HS256) or the issuer's key pair (RS256), never this.
+# Documented here so its absence is a decision rather than an omission.
+#SECRET_KEY=changethis
+
 # ── Token verification ────────────────────────────────────────────────────────
 # HS256 mode: share the same ACCESS_SECRET_KEY with auth_user_service
 ACCESS_SECRET_KEY=changethis
@@ -61,6 +68,13 @@ REFRESH_TOKEN_EXPIRE_MINUTES=3600
 # Must match auth_user_service TOKEN_ISSUER / TOKEN_AUDIENCE exactly.
 # When set, tokens with a different iss or aud claim are rejected.
 # In production with STRICT_PRODUCTION_MODE=true these become required (startup fatal).
+# auth-sdk-m8 >= 1.0.0 keeps TOKEN_STRICT_VALIDATION on by default, and a true
+# value REQUIRES both claims below — leaving the default in place while they stay
+# commented out is boot-fatal ("TOKEN_STRICT_VALIDATION=true requires
+# ['TOKEN_ISSUER', 'TOKEN_AUDIENCE'] to be set"). This standalone local example
+# has no cross-service token boundary, so it opts out explicitly; set true and
+# uncomment both claims for any deployment that talks to a real issuer.
+TOKEN_STRICT_VALIDATION=false
 #TOKEN_ISSUER=https://auth.example.com
 #TOKEN_AUDIENCE=https://api.example.com
 
@@ -69,6 +83,51 @@ REFRESH_TOKEN_EXPIRE_MINUTES=3600
 # The auth service exposes this endpoint on its Docker-internal network only.
 INTROSPECTION_URL=http://auth_user_service:8000/user/private/v1/jti-status
 PRIVATE_API_SECRET=changethis
+# Per-consumer private-API identity (fastapi-m8 item 9.1): presented as
+# X-Internal-Client alongside PRIVATE_API_SECRET, and the issuer must register
+# this id in its PRIVATE_API_CONSUMERS map with the same secret. Required once
+# INTROSPECTION_URL is set under production/strict — fastapi_m8/config.py's
+# _validate_consumer_private_auth makes the legacy single-shared-secret mode
+# fatal there. Leave it unset only for a local stack.
+INTERNAL_CLIENT_ID=prompt-engine-service
+
+# ── API-key remote introspection (§3.12) ──────────────────────────────────────
+# Enables the remote API-key principal dependencies (get_current_api_key_principal /
+# require_api_key_role) so a key resolves its owner's *live* role via the issuer's
+# POST /private/v1/api-keys/introspect — never a bare/cached key check. Fails
+# closed at startup if incomplete. Independent of INTROSPECTION_URL above (that
+# pair is JTI-revocation only). Requires this consumer to hold the
+# api-key-introspection scope in auth_user_service PRIVATE_API_CONSUMERS.
+# prompt-engine-m8 does not support API keys today — no route depends on
+# get_current_api_key_reader/_writer, so this block stays commented out.
+# tests/test_role_tiers.py asserts the wiring stays that way (audit_api_key_routes).
+# API_KEY_INTROSPECTION_ENABLED=true
+# API_KEY_INTROSPECTION_URL=http://auth_user_service:8000/user/private/v1/api-keys/introspect
+
+# ── Revocation failure mode (consumer) ───────────────────────────────────────
+# Behaviour when the fa-auth introspection call fails.
+# fail_closed (default, secure): reject the request. fail_open: allow through
+# (availability over strictness; each swallowed failure is logged + counted).
+# Declared explicitly here rather than left to inherit the SDK default.
+ACCESS_REVOCATION_FAILURE_MODE=fail_closed
+
+# ── Event signing — auth-sdk-m8 boot validator (fail-closed when enabled) ─────
+# EVENT_SIGNING_ENABLED defaults to true and boot fails closed without a strong
+# key, so omitting this pair makes a fresh `cp .example_env .env` a service that
+# will not start. Must match EVENT_SIGNING_KEY in auth_user_service: SSE
+# event-stream payloads are HMAC-SHA256 signed with it and verified on receipt.
+# Set EVENT_SIGNING_ENABLED=false to disable signing/verification entirely.
+# Secret key: >= 32 chars, with upper, lower, digit, and special char (no spaces).
+EVENT_SIGNING_ENABLED=true
+EVENT_SIGNING_KEY=changethis
+
+# ── Auth event stream (fa-auth SSE bridge) + revocation cache ────────────────
+# The stream consumes session-revoked / user-deleted events from fa-auth and
+# evicts the local positive-validation cache early; its URL is derived from
+# INTROSPECTION_URL, so no extra URL is needed. REVOCATION_CACHE_TTL_SECONDS
+# gates the cache the stream evicts: 0 (default) calls fa-auth on every request
+# and makes the stream a no-op; > 0 caches jti-status for that many seconds.
+REVOCATION_CACHE_TTL_SECONDS=0
 
 # ── Observability ─────────────────────────────────────────────────────────────
 # Master switch — false = zero overhead, /metrics endpoint not registered

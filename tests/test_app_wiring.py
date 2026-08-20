@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import APIRouter
@@ -16,27 +17,6 @@ from promt_engine_service.schemas.base import (
     LLMProviderType,
     PromptBlockType,
 )
-
-
-class AuthRecorder:
-    def __init__(self, *, fail: bool = False) -> None:
-        self.fail = fail
-        self.calls: list[tuple[str, str | None]] = []
-
-    def evict_jti(self, jti: str) -> None:
-        self.calls.append(("jti", jti))
-        if self.fail:
-            raise RuntimeError("boom")
-
-    def evict_user(self, user_id: str) -> None:
-        self.calls.append(("user", user_id))
-        if self.fail:
-            raise RuntimeError("boom")
-
-    def flush_cache(self) -> None:
-        self.calls.append(("flush", None))
-        if self.fail:
-            raise RuntimeError("boom")
 
 
 def test_model_generators_and_secret_repr(owner_id) -> None:
@@ -79,81 +59,52 @@ def test_model_generators_and_secret_repr(owner_id) -> None:
     assert "secret" not in repr(provider_model)
 
 
-@pytest.mark.anyio
-async def test_handle_auth_event_dispatches_and_logs() -> None:
-    auth = AuthRecorder()
-
-    await events.handle_auth_event(
-        SimpleNamespace(payload={"event_type": "session.revoked", "jti": "j1"}),
-        auth=auth,
-    )
-    await events.handle_auth_event(
-        SimpleNamespace(payload={"event_type": "session.revoked", "user_id": "u1"}),
-        auth=auth,
-    )
-    await events.handle_auth_event(
-        SimpleNamespace(payload={"event_type": "user.deleted", "user_id": "u2"}),
-        auth=auth,
-    )
-    await events.handle_auth_event(
-        SimpleNamespace(payload={"event_type": "unknown"}), auth=auth
-    )
-
-    assert auth.calls == [("jti", "j1"), ("user", "u1"), ("user", "u2")]
-
-    await events.handle_auth_event(
-        SimpleNamespace(payload={"event_type": "session.revoked", "jti": "bad"}),
-        auth=AuthRecorder(fail=True),
-    )
-
-
-@pytest.mark.anyio
-async def test_handle_auth_gap_and_lifespan(monkeypatch) -> None:
-    auth = AuthRecorder()
-    await events.handle_auth_gap(auth=auth)
-    assert auth.calls == [("flush", None)]
-    await events.handle_auth_gap(auth=AuthRecorder(fail=True))
-
-    class Client:
-        def __init__(self) -> None:
-            self.started = False
-            self.stopped = False
-
-        def start(self) -> None:
-            self.started = True
-
-        async def stop(self) -> None:
-            self.stopped = True
-
-    client = Client()
-
-    callbacks = {}
-
-    def fake_client(settings, *, on_event, on_gap):
-        assert settings.INTROSPECTION_URL == "https://auth.local"
-        callbacks["on_event"] = on_event
-        callbacks["on_gap"] = on_gap
-        return client
-
-    monkeypatch.setattr(events, "build_event_stream_client", fake_client)
-    settings = SimpleNamespace(INTROSPECTION_URL="https://auth.local")
-    async with events._stream_lifespan(settings, auth):
-        assert client.started is True
-        await callbacks["on_event"](
-            SimpleNamespace(payload={"event_type": "user.deleted", "user_id": "u3"})
-        )
-        await callbacks["on_gap"]()
-    assert client.stopped is True
-    assert ("user", "u3") in auth.calls
-    assert ("flush", None) in auth.calls
-
+def test_make_lifespan_extras_returns_none_when_introspection_url_unset() -> None:
     assert (
-        events.make_lifespan_extras(SimpleNamespace(INTROSPECTION_URL=None), auth)
+        events.make_lifespan_extras(
+            SimpleNamespace(INTROSPECTION_URL=None), MagicMock()
+        )
         is None
     )
-    extras = events.make_lifespan_extras(settings, auth)
-    async with extras(SimpleNamespace()):
-        assert client.started is True
+
+
+@pytest.mark.anyio
+async def test_make_lifespan_extras_wires_sdk_dispatch_and_starts_stops_client() -> (
+    None
+):
+    """The stream client is built with the SDK's own dispatch, not a local
+    re-implementation: ``on_event`` must be ``auth.handle_auth_event`` and
+    ``on_gap`` must delegate to ``auth.flush_cache``."""
+    settings = SimpleNamespace(INTROSPECTION_URL="https://auth.local")
+
+    mock_client = MagicMock()
+    mock_client.stop = AsyncMock()
+    captured: dict = {}
+
+    def fake_build(s, *, on_event, on_gap, **kw):
+        assert s.INTROSPECTION_URL == "https://auth.local"
+        captured["on_event"] = on_event
+        captured["on_gap"] = on_gap
+        return mock_client
+
+    auth = MagicMock()
+    with patch(
+        "promt_engine_service.core.events.build_event_stream_client",
+        side_effect=fake_build,
+    ):
+        extras = events.make_lifespan_extras(settings, auth)
+        assert extras is not None
+        async with extras(SimpleNamespace()):
+            mock_client.start.assert_called_once()
+
+    mock_client.stop.assert_awaited_once()
+
+    # The client must be wired straight to the SDK's own dispatch methods —
+    # no locally re-derived handler in between.
+    assert captured["on_event"] is auth.handle_auth_event
+
+    await captured["on_gap"]()
+    auth.flush_cache.assert_called_once()
 
 
 def test_metrics_endpoint_registration(monkeypatch) -> None:
@@ -164,7 +115,7 @@ def test_metrics_endpoint_registration(monkeypatch) -> None:
     assert not router.routes
 
     monkeypatch.setattr(
-        "auth_sdk_m8.observability.metrics.render",
+        "fastapi_m8.render_metrics",
         lambda: (b"metrics", "text/plain"),
     )
     main._register_metrics_endpoint(router, enabled=True, credential=None)

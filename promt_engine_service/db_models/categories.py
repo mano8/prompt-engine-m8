@@ -1,6 +1,6 @@
 """Category database models and schemas."""
 
-from typing import List
+from typing import List, Optional
 import uuid
 
 from pydantic import model_validator
@@ -8,7 +8,7 @@ from sqlalchemy import UniqueConstraint
 from slugify import slugify
 from sqlmodel import Column, Field, SQLModel
 
-from auth_sdk_m8.models.shared import TimestampMixin
+from fastapi_m8 import TimestampMixin
 from promt_engine_service.core.config import settings
 from promt_engine_service.core.db_models import UUIDString, prefixed_tables
 from promt_engine_service.schemas.base import CategoryType
@@ -23,7 +23,24 @@ class CategoryBase(SQLModel):
 
 
 class CategoryGenerators(CategoryBase):
-    """Category schema with slug auto-generation."""
+    """Category schema with slug auto-generation.
+
+    ``slug`` is redeclared as optional here — and only here, on the payload
+    schemas, never on the table. The validator below derives it from the
+    required ``name``, so a caller neither has to send one nor can usefully
+    disagree with the derived value. Inheriting the table's required ``slug``
+    published a schema that demanded a field the service was going to
+    overwrite, which is the same class of defect as `H2` pointing the other
+    way: a client mirroring the published contract would send exactly the
+    wrong thing. ``PromptBlockModel``/``PromptTemplateModel`` already declare
+    it this way; this brings the category payload in line.
+    """
+
+    # Deliberately widens the base's ``str`` — a payload may omit what the
+    # validator derives, while the table it feeds still cannot hold a null.
+    slug: Optional[str] = Field(  # type: ignore[assignment]
+        default=None, min_length=1, max_length=50
+    )
 
     @model_validator(mode="before")
     @classmethod

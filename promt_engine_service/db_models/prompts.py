@@ -7,8 +7,7 @@ from sqlalchemy import TEXT, Column, UniqueConstraint
 from slugify import slugify
 from sqlmodel import Field, Relationship, SQLModel
 
-from auth_sdk_m8.models.shared import TimestampMixin
-from auth_sdk_m8.schemas.shared import ValidationConstants
+from fastapi_m8 import TimestampMixin, ValidationConstants
 from promt_engine_service.core.config import settings
 from promt_engine_service.core.db_models import UUIDString, prefixed_fk, prefixed_tables
 from promt_engine_service.schemas.base import PromptBlockType
@@ -91,7 +90,11 @@ class PromptTemplateBase(TimestampMixin, SQLModel):
         sa_column=Column(TEXT(), nullable=True),
         max_length=1000,
     )
-    is_public: bool = Field(default=True)
+    # Private unless it opts in, matching PromptBlock and the PromptTemplateModel
+    # create/update payload. Since A15 this default is authorization-relevant:
+    # a public record is readable by any authenticated principal, so defaulting
+    # it to True would publish every template built outside the API payload.
+    is_public: bool = Field(default=False)
 
 
 class PromptTemplate(PromptTemplateBase, SQLModel, table=True):

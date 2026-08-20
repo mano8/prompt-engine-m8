@@ -141,8 +141,8 @@ Compose stack.
 | prompt-template | POST | `/prompt-template/add/` | JWT | Create a prompt template |
 | prompt-template | PUT | `/prompt-template/edit/{item_id}/` | JWT | Update a prompt template |
 | prompt-template | DELETE | `/prompt-template/delete/{item_id}/` | JWT | Delete a prompt template |
-| prompt-template | GET | `/prompt-template/{template_id}/add-block/{block_id}/` | JWT | Attach a block to a template |
-| prompt-template | GET | `/prompt-template/{template_id}/set-block-position/{block_id}/` | JWT | Reorder a template block |
+| prompt-template | POST | `/prompt-template/{template_id}/add-block/{block_id}/` | JWT | Attach a block to a template |
+| prompt-template | PUT | `/prompt-template/{template_id}/set-block-position/{block_id}/` | JWT | Reorder a template block |
 | prompt-template | DELETE | `/prompt-template/{template_id}/delete-block/{block_id}/` | JWT | Remove a block from a template |
 | dashboard | GET | `/dashboard/users/activity/` | JWT | All-user prompt activity summary |
 | dashboard | GET | `/dashboard/users/activity/current/` | JWT | Current-user prompt activity summary |

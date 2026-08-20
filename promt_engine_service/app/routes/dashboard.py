@@ -2,13 +2,23 @@
 DashBoard routes
 """
 
-from fastapi import APIRouter
-from promt_engine_service.app.deps import CurrentUser, SessionDep
-from auth_sdk_m8.controllers.base import BaseController
+from fastapi import APIRouter, Depends
+from promt_engine_service.app.deps import CurrentAdmin, SessionDep, require_admin
+from fastapi_m8 import BaseController
 from promt_engine_service.controllers.dashboard import DashboardController
 from promt_engine_service.schemas.dashboard import RangeActivityType, UsersActivity
 
-router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+# Router floor: admin (operator decision D-C2, superseding the A15 writer
+# floor). Both routes aggregate activity across users, and the consuming UI
+# has always gated the dashboard on an administrative principal — so the
+# writer floor admitted a tier no client ever sent and no view was designed
+# for. ``CurrentAdmin`` was exported for exactly this; the ``is_superuser``
+# branch inside ``DashboardController`` still narrows own-vs-fleet-wide.
+router = APIRouter(
+    prefix="/dashboard",
+    tags=["dashboard"],
+    dependencies=[Depends(require_admin)],
+)
 # pylint: disable=broad-exception-caught, unused-argument
 
 
@@ -18,7 +28,7 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
     responses=BaseController.get_error_responses(),
 )
 def get_dash_users_stats(
-    session: SessionDep, current_user: CurrentUser
+    session: SessionDep, current_user: CurrentAdmin
 ) -> UsersActivity:
     """Get phpfina files list from source."""
     return DashboardController.get_dash_users_stats(
@@ -32,7 +42,7 @@ def get_dash_users_stats(
     responses=BaseController.get_error_responses(),
 )
 def get_dash_current_user_stats(
-    session: SessionDep, current_user: CurrentUser
+    session: SessionDep, current_user: CurrentAdmin
 ) -> UsersActivity:
     """Get phpfina files list from source."""
     return DashboardController.get_dash_users_stats(

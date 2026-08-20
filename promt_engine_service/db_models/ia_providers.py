@@ -8,7 +8,7 @@ from sqlalchemy import UniqueConstraint
 from slugify import slugify
 from sqlmodel import Column, Field, SQLModel
 
-from auth_sdk_m8.models.shared import TimestampMixin
+from fastapi_m8 import TimestampMixin
 from promt_engine_service.core.config import settings
 from promt_engine_service.core.db_models import UUIDString, prefixed_tables
 from promt_engine_service.schemas.base import LLMProviderType
