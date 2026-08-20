@@ -11,9 +11,10 @@ invent its own authorization decision:
 ``CurrentWriter``
     Mutations — add, edit and delete of owned records.
 ``CurrentAdmin``
-    Administrative surface. No route carries it today; it is exported so the
-    tier exists in one place the day one does, rather than being invented at
-    the call site.
+    Administrative surface. ``/dashboard/*`` carries it, as of the ``D-C2``
+    decision that raised that router's floor from writer to admin: both
+    dashboard routes aggregate activity across users, so the writer floor
+    admitted a tier no client ever sent.
 
 There is deliberately no bare ``CurrentUser`` export (A15/F7).
 """
