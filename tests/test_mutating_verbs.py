@@ -1,4 +1,4 @@
-"""`C5` — the two state-mutating routes answer on a mutating verb.
+"""`C5`/`C17` — the two state-mutating routes answer *only* on a mutating verb.
 
 `H3`: attaching a block to a template and moving one both changed state behind
 a ``GET``. A ``GET`` is cacheable, prefetchable and link-followable, and the
@@ -6,11 +6,14 @@ a ``GET``. A ``GET`` is cacheable, prefetchable and link-followable, and the
 prefetching browser, a link-scanning mail client or an intermediary cache can
 each fire it without a user ever acting.
 
-The fix is additive: ``POST``/``PUT`` are the real verbs, and the ``GET``
-forms stay mounted and marked deprecated for one minor so a consumer released
-before this change is not broken mid-flight. Both are asserted, including that
-they produce the same result — an alias that has drifted from its replacement
-is worse than no alias.
+`C5` shipped ``POST``/``PUT`` and kept the ``GET`` forms as deprecated aliases
+so a consumer released before the change was not broken mid-flight. `C17`
+removed them: `2.0.0` was never published, so no released consumer ever met
+the aliases, and deleting them before the tag costs nothing while deleting
+them after it would be a breaking change in a minor.
+
+The removal is asserted as well as the replacement — a mutating ``GET`` that
+comes back is the defect returning, and only a negative test can see that.
 """
 
 from __future__ import annotations
@@ -106,50 +109,33 @@ def test_a_block_is_moved_with_put(client, headers, template_and_blocks) -> None
 
 
 # --------------------------------------------------------------------------
-# The deprecated aliases.
+# The removed `GET` forms.
 # --------------------------------------------------------------------------
 
 
-def test_the_get_aliases_still_work(client, headers, template_and_blocks) -> None:
-    """A consumer released before `C5` keeps working for one more minor."""
-    template, blocks = template_and_blocks
-
-    added = client.get(add_url(template.id, blocks[0].id), headers=headers)
-    client.get(add_url(template.id, blocks[1].id), headers=headers)
-    moved = client.get(
-        position_url(template.id, blocks[1].id),
-        params={"position": 1},
-        headers=headers,
-    )
-
-    assert added.status_code == 200, added.text
-    assert moved.status_code == 200, moved.text
-    assert attached(client, headers, template.id) == ["block-1", "block-0"]
-
-
-def test_both_verbs_produce_the_same_result(
-    client, headers, session, owner_uuid, template_and_blocks
+@pytest.mark.parametrize("url_for", [add_url, position_url], ids=["add", "move"])
+def test_the_get_forms_no_longer_answer(
+    client, headers, template_and_blocks, url_for
 ) -> None:
-    """The alias delegates rather than duplicating, so it cannot drift."""
+    """`C17`: the alias is gone from the router, not merely discouraged.
+
+    ``405`` rather than ``404`` is the correct expectation — the path is still
+    mounted, on the mutating verb alone — and it is the answer that
+    distinguishes a removed alias from a mistyped path.
+    """
     template, blocks = template_and_blocks
-    other = PromptTemplate(name="Other", slug="other", owner_id=owner_uuid)
-    session.add(other)
-    session.commit()
-    session.refresh(other)
 
-    via_post = client.post(add_url(template.id, blocks[0].id), headers=headers).json()
-    via_get = client.get(add_url(other.id, blocks[0].id), headers=headers).json()
+    response = client.get(url_for(template.id, blocks[0].id), headers=headers)
 
-    assert via_post["success"] == via_get["success"] is True
-    assert via_post["data"]["position"] == via_get["data"]["position"] == 1
-    assert via_post["data"]["block_id"] == via_get["data"]["block_id"]
+    assert response.status_code == 405, response.text
+    assert attached(client, headers, template.id) == []
 
 
-def test_the_get_forms_are_marked_deprecated_in_the_schema(client) -> None:
-    """The deprecation is published, not only intended.
+def test_the_get_forms_are_absent_from_the_schema(client) -> None:
+    """The removal is published, not only implemented.
 
-    A consumer's contract-drift check reads the OpenAPI document; a route
-    deprecated in a CHANGELOG alone is deprecated to nobody.
+    A consumer's contract-drift check reads the OpenAPI document; a route the
+    document still advertises is a route a generated client will still call.
     """
     paths = client.get(f"{PREFIX}/openapi.json").json()["paths"]
     add = paths[f"{PREFIX}/prompt-template/{{template_id}}/add-block/{{block_id}}/"]
@@ -157,9 +143,9 @@ def test_the_get_forms_are_marked_deprecated_in_the_schema(client) -> None:
         f"{PREFIX}/prompt-template/{{template_id}}/set-block-position/{{block_id}}/"
     ]
 
-    assert add["get"]["deprecated"] is True
+    assert set(add) == {"post"}
+    assert set(move) == {"put"}
     assert add["post"].get("deprecated", False) is False
-    assert move["get"]["deprecated"] is True
     assert move["put"].get("deprecated", False) is False
 
 
@@ -177,12 +163,16 @@ def test_the_delete_verb_is_unchanged(client, headers, template_and_blocks) -> N
     assert attached(client, headers, template.id) == []
 
 
-@pytest.mark.parametrize("method", ["post", "get"])
+@pytest.mark.parametrize(
+    ("method", "url_for"),
+    [("post", add_url), ("put", position_url)],
+    ids=["add", "move"],
+)
 def test_the_writer_floor_is_enforced_on_both_verbs(
-    client, auth_headers, template_and_blocks, method
+    client, auth_headers, template_and_blocks, method, url_for
 ) -> None:
     template, blocks = template_and_blocks
     response = client.request(
-        method, add_url(template.id, blocks[0].id), headers=auth_headers("reader")
+        method, url_for(template.id, blocks[0].id), headers=auth_headers("reader")
     )
     assert response.status_code == 403

@@ -299,12 +299,12 @@ def delete_prompt_template(
 # --------------------------------------------------------------------------
 # Template block membership.
 #
-# `H3`/`C5`: attaching a block and moving one are state changes, and they were
-# reachable by ``GET`` — which makes them cacheable, prefetchable and
-# link-followable. `POST` and `PUT` below are the real verbs. The `GET` forms
-# remain mounted, marked deprecated, for one minor so a client mid-flight is
-# not broken by the fix; they delegate to the same body rather than carrying a
-# second copy of it, so the two verbs cannot drift while both are live.
+# `H3`/`C5`/`C17`: attaching a block and moving one are state changes, and they
+# were reachable by ``GET`` — which makes them cacheable, prefetchable and
+# link-followable. `POST` and `PUT` below are the only verbs that answer. `C5`
+# kept deprecated ``GET`` aliases for a client mid-flight; `C17` removed them
+# before `2.0.0` was published, so no released consumer ever met them and the
+# exposure is closed end to end rather than only on the replacement.
 # --------------------------------------------------------------------------
 
 
@@ -337,34 +337,6 @@ def add_block_to_prompt_template(
         return BaseController.handle_exception(ex=ex, session=session)
 
 
-@router.get(
-    "/{template_id}/add-block/{block_id}/",
-    response_model=ResponseModelBase,
-    responses=BaseController.get_error_responses(),
-    deprecated=True,
-)
-def add_block_to_prompt_template_via_get(
-    *,
-    session: SessionDep,
-    current_user: CurrentWriter,
-    block_id: int,
-    template_id: int,
-    position: int = 0,
-) -> Any:
-    """Deprecated ``GET`` alias of the ``POST`` above. Use ``POST``.
-
-    Mounted only so a consumer released before `C5` keeps working; scheduled
-    for removal in the next minor.
-    """
-    return add_block_to_prompt_template(
-        session=session,
-        current_user=current_user,
-        block_id=block_id,
-        template_id=template_id,
-        position=position,
-    )
-
-
 @router.put(
     "/{template_id}/set-block-position/{block_id}/",
     response_model=ResponseModelBase,
@@ -392,34 +364,6 @@ def update_prompt_template_block_position(
         raise
     except Exception as ex:
         return BaseController.handle_exception(ex=ex, session=session)
-
-
-@router.get(
-    "/{template_id}/set-block-position/{block_id}/",
-    response_model=ResponseModelBase,
-    responses=BaseController.get_error_responses(),
-    deprecated=True,
-)
-def update_prompt_template_block_position_via_get(
-    *,
-    session: SessionDep,
-    current_user: CurrentWriter,
-    block_id: int,
-    template_id: int,
-    position: int = 1,
-) -> Any:
-    """Deprecated ``GET`` alias of the ``PUT`` above. Use ``PUT``.
-
-    Mounted only so a consumer released before `C5` keeps working; scheduled
-    for removal in the next minor.
-    """
-    return update_prompt_template_block_position(
-        session=session,
-        current_user=current_user,
-        block_id=block_id,
-        template_id=template_id,
-        position=position,
-    )
 
 
 @router.delete(
