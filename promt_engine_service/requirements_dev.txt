@@ -18,6 +18,6 @@ bandit>=1.9.4
 mypy>=2.3.1
 
 # Build tools (optional but OK in dev)
-setuptools>=82.0.1
+setuptools>=84.0.0
 wheel>=0.47.0
 build>=1.5.0
