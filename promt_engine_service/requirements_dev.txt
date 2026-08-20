@@ -15,7 +15,7 @@ debugpy>=1.8.20
 # Matches fa-auth-m8's exact-pin convention.
 ruff==0.15.18
 bandit>=1.9.4
-mypy>=2.1.0
+mypy>=2.3.1
 
 # Build tools (optional but OK in dev)
 setuptools>=82.0.1
