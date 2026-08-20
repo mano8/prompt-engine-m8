@@ -13,7 +13,7 @@ debugpy>=1.8.20
 # publishes that day, and 0.16.x enables a materially broader default rule
 # set than 0.15.x, making `ruff check .` non-reproducible across two runs.
 # Matches fa-auth-m8's exact-pin convention.
-ruff==0.15.18
+ruff==0.16.3
 bandit>=1.9.4
 mypy>=2.3.1
 
