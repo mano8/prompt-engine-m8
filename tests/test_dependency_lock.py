@@ -102,3 +102,56 @@ def test_ci_audits_the_file_the_dockerfile_installs() -> None:
         f"{lock_name!r} the Dockerfile installs with --require-hashes. The "
         "shipped dependency set would go unaudited."
     )
+
+
+def test_ci_runs_the_suite_against_the_shipped_lock() -> None:
+    """Scanning the shipped set is not the same as executing it.
+
+    `pip-audit` and Trivy both *read* requirements_prod.lock; neither *runs* it.
+    The `test` matrix installs requirements_dev.txt — `>=` floors — so it
+    exercises whatever resolves newest that day, a graph that differed from the
+    lock on 20 of its 49 pins when this was written. A lock that installs and
+    then fails at import or at runtime would ship with every job green.
+
+    Asserts the workflow keeps a job that installs the lock with
+    `--require-hashes` and runs pytest in that environment.
+    """
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    jobs = re.split(r"\n  (?=[A-Za-z0-9_-]+:\n)", workflow)
+    lock_test_jobs = [
+        job
+        for job in jobs
+        if "--require-hashes" in job and re.search(r"\n\s+run: pytest\b", job)
+    ]
+    assert lock_test_jobs, (
+        "No CI job installs requirements_prod.lock with --require-hashes and "
+        "then runs pytest. The dependency set the release image ships would be "
+        "scanned but never executed."
+    )
+
+
+def test_the_shipped_lock_test_job_pins_its_tooling() -> None:
+    """The job must not be able to quietly stop testing the shipped set.
+
+    Installing pytest unconstrained on top of the lock can drag a runtime
+    package forward, at which point the job still passes while testing a set
+    that is not the one that ships — the defect it exists to close, recreated
+    inside it. `scripts/shipped_lock_env.py --verify` is the check that
+    forbids it, so its presence is part of the job's meaning.
+    """
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    jobs = re.split(r"\n  (?=[A-Za-z0-9_-]+:\n)", workflow)
+    job = next(
+        (
+            j
+            for j in jobs
+            if "--require-hashes" in j and re.search(r"\n\s+run: pytest\b", j)
+        ),
+        None,
+    )
+    assert job is not None, "no shipped-lock test job to inspect"
+    assert "--verify" in job, (
+        "The shipped-lock test job installs test tooling but never re-verifies "
+        "the environment against the lock, so a tooling install could move a "
+        "runtime package and the job would still report green."
+    )
