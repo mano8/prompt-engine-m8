@@ -29,6 +29,7 @@ the single entry the version that ships actually carries.
 
 - `constraints.txt` / `constraints-all.txt` for reproducible resolution.
 - Supply-chain policy tests: `test_dependency_lock.py` and `test_ci_policy.py` (hashed lock, digest-pinned `FROM` stages, SBOM/provenance/cosign, SHA-pinned actions, single CI gate, contract assertions).
+- **`pip-audit` now runs against the shipped `requirements_prod.lock`, not only the dev floors.** CI audited `requirements_dev.txt` alone — `-r requirements_base.txt` plus dev tools, every entry a `>=` floor — so it resolved whatever was newest on the day it ran rather than the pinned graph the release image installs with `--require-hashes`. Measured at the time of the fix: 20 of the lock's 49 pins were audited at a *newer* version than the shipped one (`starlette` 1.3.1 vs 1.6.0, `uvicorn` 0.49.0 vs 0.52.4, `alembic` 1.18.5 vs 1.19.1, …), and `gunicorn` — the production server, declared in `requirements_prod.txt` and in no dev file — was audited at no version at all. A CVE against a shipped version that is fixed upstream was therefore invisible: the audit resolved the fixed release and reported clean while the image shipped the vulnerable one. `trivy-image` did cover the built image, but only at CRITICAL/HIGH with `ignore-unfixed`. `test_ci_audits_the_file_the_dockerfile_installs` reads the lock's name out of the Dockerfile's prod install and asserts CI audits that same file, so the gate cannot drift from the artifact. The lock is clean as of this entry — no known vulnerabilities.
 
 ### Changed
 

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LOCK_FILE = REPO_ROOT / "promt_engine_service" / "requirements_prod.lock"
 DOCKERFILE = REPO_ROOT / "promt_engine_service" / "Dockerfile"
+CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "CI.yaml"
 
 
 def test_lock_file_exists() -> None:
@@ -66,3 +68,37 @@ def test_dockerfile_from_stages_digest_pinned() -> None:
         # Every non-scratch FROM must include a digest pin
         if "scratch" not in line.lower():
             assert "@sha256:" in line, f"FROM stage not digest-pinned: {line}"
+
+
+def test_ci_audits_the_file_the_dockerfile_installs() -> None:
+    """The audited requirements file must be the one the release image installs.
+
+    CI ran `pip-audit -r requirements_dev.txt` and nothing else. That file is
+    `-r requirements_base.txt` plus dev tools, every entry a `>=` floor, so the
+    audit resolved whatever was newest on the day it ran — not the pinned graph
+    the image ships. Measured when this test was written: 20 of the lock's 49
+    pins were audited at a newer version than the shipped one, and `gunicorn`
+    (declared in requirements_prod.txt, in no dev file) was audited at no
+    version at all. A CVE fixed in a newer release is invisible that way — the
+    audit resolves the fix and reports clean while the image ships the flaw.
+
+    Read out of the Dockerfile rather than hardcoded, so renaming the lock or
+    repointing the prod install cannot leave the audit aimed at a stale path.
+    """
+    dockerfile = DOCKERFILE.read_text(encoding="utf-8")
+    installed = re.search(r"--require-hashes\s+-r\s+(\S+)", dockerfile)
+    assert installed is not None, (
+        "Dockerfile has no `--require-hashes -r <file>` prod install to audit."
+    )
+    lock_name = installed.group(1).strip()
+
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    audited = {
+        m.group(1)
+        for m in re.finditer(r"pip-audit\s+(?:-[^\s]+\s+)*-r\s+(\S+)", workflow)
+    }
+    assert any(path.endswith(lock_name) for path in audited), (
+        f"CI runs pip-audit against {sorted(audited)}, none of which is the "
+        f"{lock_name!r} the Dockerfile installs with --require-hashes. The "
+        "shipped dependency set would go unaudited."
+    )

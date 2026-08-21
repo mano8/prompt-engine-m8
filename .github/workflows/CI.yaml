@@ -74,8 +74,36 @@ jobs:
       - name: Install pip-audit
         run: pip install pip-audit
 
-      - name: Run pip-audit (dependency vulnerability scan)
+      # Audits the dev toolchain (ruff, mypy, bandit, pytest, build tools).
+      # These are floors, so this resolves whatever is current on the day CI
+      # runs - which is the right question for tooling and the wrong one for
+      # the artifact. The step below asks the artifact question.
+      - name: Run pip-audit (dev toolchain)
         run: pip-audit -r promt_engine_service/requirements_dev.txt
+
+      # Audits the set the release image actually installs.
+      #
+      # requirements_dev.txt is `-r requirements_base.txt` plus dev tools, and
+      # every entry is a `>=` floor, so auditing it resolves a graph that is
+      # not the one that ships. Measured against this lock: of the 49 pins the
+      # image installs, 20 are audited at a *newer* version than the one
+      # shipped (starlette 1.3.1 vs 1.6.0, uvicorn 0.49.0 vs 0.52.4, alembic
+      # 1.18.5 vs 1.19.1, ...), and gunicorn - the production server, declared
+      # in requirements_prod.txt and in no dev file - is not audited at all.
+      # A CVE against a shipped version that is fixed in a newer one is
+      # therefore invisible to the dev audit: it resolves the fixed version
+      # and reports clean while the image ships the vulnerable one.
+      #
+      # trivy-image scans the built image and so does cover this set, but only
+      # at CRITICAL/HIGH with ignore-unfixed, and only once the image builds.
+      # pip-audit has no severity floor and reads the lock as source, which is
+      # where a fix has to land anyway.
+      #
+      # The lock is fully pinned and hashed for linux, so this needs no
+      # --no-deps: pip resolves it exactly as the Dockerfile's
+      # `--require-hashes` install does.
+      - name: Run pip-audit (shipped prod lock)
+        run: pip-audit -r promt_engine_service/requirements_prod.lock
 
       - name: Trivy filesystem scan (CRITICAL/HIGH CVEs and secrets)
         uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # master
