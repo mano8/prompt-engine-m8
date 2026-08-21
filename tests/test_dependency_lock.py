@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LOCK_FILE = REPO_ROOT / "promt_engine_service" / "requirements_prod.lock"
 DOCKERFILE = REPO_ROOT / "promt_engine_service" / "Dockerfile"
+CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "CI.yaml"
 
 
 def test_lock_file_exists() -> None:
@@ -66,3 +68,90 @@ def test_dockerfile_from_stages_digest_pinned() -> None:
         # Every non-scratch FROM must include a digest pin
         if "scratch" not in line.lower():
             assert "@sha256:" in line, f"FROM stage not digest-pinned: {line}"
+
+
+def test_ci_audits_the_file_the_dockerfile_installs() -> None:
+    """The audited requirements file must be the one the release image installs.
+
+    CI ran `pip-audit -r requirements_dev.txt` and nothing else. That file is
+    `-r requirements_base.txt` plus dev tools, every entry a `>=` floor, so the
+    audit resolved whatever was newest on the day it ran — not the pinned graph
+    the image ships. Measured when this test was written: 20 of the lock's 49
+    pins were audited at a newer version than the shipped one, and `gunicorn`
+    (declared in requirements_prod.txt, in no dev file) was audited at no
+    version at all. A CVE fixed in a newer release is invisible that way — the
+    audit resolves the fix and reports clean while the image ships the flaw.
+
+    Read out of the Dockerfile rather than hardcoded, so renaming the lock or
+    repointing the prod install cannot leave the audit aimed at a stale path.
+    """
+    dockerfile = DOCKERFILE.read_text(encoding="utf-8")
+    installed = re.search(r"--require-hashes\s+-r\s+(\S+)", dockerfile)
+    assert installed is not None, (
+        "Dockerfile has no `--require-hashes -r <file>` prod install to audit."
+    )
+    lock_name = installed.group(1).strip()
+
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    audited = {
+        m.group(1)
+        for m in re.finditer(r"pip-audit\s+(?:-[^\s]+\s+)*-r\s+(\S+)", workflow)
+    }
+    assert any(path.endswith(lock_name) for path in audited), (
+        f"CI runs pip-audit against {sorted(audited)}, none of which is the "
+        f"{lock_name!r} the Dockerfile installs with --require-hashes. The "
+        "shipped dependency set would go unaudited."
+    )
+
+
+def test_ci_runs_the_suite_against_the_shipped_lock() -> None:
+    """Scanning the shipped set is not the same as executing it.
+
+    `pip-audit` and Trivy both *read* requirements_prod.lock; neither *runs* it.
+    The `test` matrix installs requirements_dev.txt — `>=` floors — so it
+    exercises whatever resolves newest that day, a graph that differed from the
+    lock on 20 of its 49 pins when this was written. A lock that installs and
+    then fails at import or at runtime would ship with every job green.
+
+    Asserts the workflow keeps a job that installs the lock with
+    `--require-hashes` and runs pytest in that environment.
+    """
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    jobs = re.split(r"\n  (?=[A-Za-z0-9_-]+:\n)", workflow)
+    lock_test_jobs = [
+        job
+        for job in jobs
+        if "--require-hashes" in job and re.search(r"\n\s+run: pytest\b", job)
+    ]
+    assert lock_test_jobs, (
+        "No CI job installs requirements_prod.lock with --require-hashes and "
+        "then runs pytest. The dependency set the release image ships would be "
+        "scanned but never executed."
+    )
+
+
+def test_the_shipped_lock_test_job_pins_its_tooling() -> None:
+    """The job must not be able to quietly stop testing the shipped set.
+
+    Installing pytest unconstrained on top of the lock can drag a runtime
+    package forward, at which point the job still passes while testing a set
+    that is not the one that ships — the defect it exists to close, recreated
+    inside it. `scripts/shipped_lock_env.py --verify` is the check that
+    forbids it, so its presence is part of the job's meaning.
+    """
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    jobs = re.split(r"\n  (?=[A-Za-z0-9_-]+:\n)", workflow)
+    job = next(
+        (
+            j
+            for j in jobs
+            if "--require-hashes" in j and re.search(r"\n\s+run: pytest\b", j)
+        ),
+        None,
+    )
+    assert job is not None, "no shipped-lock test job to inspect"
+    assert "--verify" in job, (
+        "The shipped-lock test job installs test tooling but never re-verifies "
+        "the environment against the lock, so a tooling install could move a "
+        "runtime package and the job would still report green."
+    )

@@ -74,8 +74,36 @@ jobs:
       - name: Install pip-audit
         run: pip install pip-audit
 
-      - name: Run pip-audit (dependency vulnerability scan)
+      # Audits the dev toolchain (ruff, mypy, bandit, pytest, build tools).
+      # These are floors, so this resolves whatever is current on the day CI
+      # runs - which is the right question for tooling and the wrong one for
+      # the artifact. The step below asks the artifact question.
+      - name: Run pip-audit (dev toolchain)
         run: pip-audit -r promt_engine_service/requirements_dev.txt
+
+      # Audits the set the release image actually installs.
+      #
+      # requirements_dev.txt is `-r requirements_base.txt` plus dev tools, and
+      # every entry is a `>=` floor, so auditing it resolves a graph that is
+      # not the one that ships. Measured against this lock: of the 49 pins the
+      # image installs, 20 are audited at a *newer* version than the one
+      # shipped (starlette 1.3.1 vs 1.6.0, uvicorn 0.49.0 vs 0.52.4, alembic
+      # 1.18.5 vs 1.19.1, ...), and gunicorn - the production server, declared
+      # in requirements_prod.txt and in no dev file - is not audited at all.
+      # A CVE against a shipped version that is fixed in a newer one is
+      # therefore invisible to the dev audit: it resolves the fixed version
+      # and reports clean while the image ships the vulnerable one.
+      #
+      # trivy-image scans the built image and so does cover this set, but only
+      # at CRITICAL/HIGH with ignore-unfixed, and only once the image builds.
+      # pip-audit has no severity floor and reads the lock as source, which is
+      # where a fix has to land anyway.
+      #
+      # The lock is fully pinned and hashed for linux, so this needs no
+      # --no-deps: pip resolves it exactly as the Dockerfile's
+      # `--require-hashes` install does.
+      - name: Run pip-audit (shipped prod lock)
+        run: pip-audit -r promt_engine_service/requirements_prod.lock
 
       - name: Trivy filesystem scan (CRITICAL/HIGH CVEs and secrets)
         uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # master
@@ -124,6 +152,45 @@ jobs:
         with:
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
           coverage-reports: coverage.xml
+
+  # Runs the suite against the dependency graph the release image actually
+  # installs.
+  #
+  # The `test` matrix above installs requirements_dev.txt - `>=` floors - so it
+  # exercises whatever resolves newest that day. requirements_prod.lock is a
+  # different graph (20 of its 49 pins differ), and it was the only one nothing
+  # executed: pip-audit and trivy *scan* it, neither *runs* it. A lock that
+  # installs and then breaks at import or at runtime shipped green.
+  #
+  # Test tooling is installed on top under constraints derived from the lock,
+  # and the environment is re-verified afterwards, so pytest cannot drag a
+  # runtime package forward and quietly turn this back into a test of some
+  # other set.
+  test-shipped-lock:
+    name: Tests against the shipped prod lock
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Install the shipped set exactly as the Dockerfile does
+        run: pip install --require-hashes -r promt_engine_service/requirements_prod.lock
+
+      - name: Derive constraints from the lock
+        run: python scripts/shipped_lock_env.py --emit-constraints lock-constraints.txt
+
+      - name: Add test tooling without moving the shipped set
+        run: pip install -c lock-constraints.txt pytest pytest-cov coverage
+
+      - name: Verify the environment is still the shipped set
+        run: python scripts/shipped_lock_env.py --verify
+
+      - name: Run tests against the shipped set
+        run: pytest --cov-fail-under=100 -p no:cacheprovider
 
   trivy-image:
     runs-on: ubuntu-latest
