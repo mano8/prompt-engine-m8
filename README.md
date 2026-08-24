@@ -27,6 +27,8 @@ The repository includes a Docker Compose development stack with Traefik,
 - [Architecture](#architecture)
 - [Docker Compose Stack](#docker-compose-stack)
 - [API Endpoints](#api-endpoints)
+  - [List query parameters](#list-query-parameters)
+  - [Compatibility preflight (`/meta`)](#compatibility-preflight-meta)
 - [Dynamic Block Composition](#dynamic-block-composition)
 - [Quick Start](#quick-start)
 - [Environment Variables](#environment-variables)
@@ -146,6 +148,51 @@ Compose stack.
 | prompt-template | DELETE | `/prompt-template/{template_id}/delete-block/{block_id}/` | JWT | Remove a block from a template |
 | dashboard | GET | `/dashboard/users/activity/` | JWT | All-user prompt activity summary |
 | dashboard | GET | `/dashboard/users/activity/current/` | JWT | Current-user prompt activity summary |
+
+### List query parameters
+
+`GET /prompt-block/`, `GET /prompt-template/` and `GET /category/` accept
+`skip`/`limit` plus a declared, additive list-query vocabulary — every value
+is validated against an allow-list published in the OpenAPI document
+(`promt_engine_service/schemas/list_params.py`); an undeclared value is
+rejected with `422`, never silently ignored.
+
+| Param | Meaning | `prompt-block` | `prompt-template` | `category` |
+| --- | --- | --- | --- | --- |
+| `q` | Free-text search, bound as a parameter (never interpolated) | `name`, `slug`, `description`, `content` | `name`, `slug`, `description` | `name`, `slug` |
+| `csrc` | Restrict `q` to one of its columns | same as `q` | same as `q` | not offered |
+| `sort` | Column to order by | `id`, `name`, `slug`, `type`, `is_dynamic`, `is_public`, `created_at`, `updated_at` | `id`, `name`, `slug`, `is_public`, `block_count`, `created_at`, `updated_at` | `id`, `name`, `slug`, `type`, `created_at`, `updated_at` |
+| `order` | `asc` \| `desc` | ✓ | ✓ | ✓ |
+| `f` | Comma-joined facet values, combined with `OR` | block type axis + `dynamic`/`static`/`public`/`private` | `public`/`private` | not offered |
+
+Notes:
+
+- `limit` is bounded at `MAX_PAGE_SIZE = 500` (published as `maximum` in the
+  OpenAPI schema); `q` is bounded at `MAX_SEARCH_LENGTH = 200` characters.
+  `q` compiles to a leading-wildcard `LIKE` over every declared column —
+  `content` included, which is unindexed text — so the request payload is
+  bounded even though the underlying scan is a function of table size and
+  indexing rather than of `limit`.
+- `count` in every list response is the **filtered** count, not the count of
+  everything visible to the caller. A client that never sends `q`/`f` sees no
+  difference; one that does gets a paginator that agrees with its own result
+  set.
+- `sort=block_count` on `GET /prompt-template/` orders by the number of
+  attached blocks via a correlated subquery — it is not a real column.
+- Every route also answers plain `skip`/`limit` unchanged; the new parameters
+  are additive and optional.
+
+### Compatibility preflight (`/meta`)
+
+`GET /meta` (mounted with no auth requirement) publishes
+`CONTRACT_NAME = "prompt-engine-m8"`, `CONTRACT_VERSION`, `CONTRACT_RANGE`
+(currently `>=2.0.0 <3.0.0`) and `SERVICE_VERSION` alongside the generic
+`fastapi-m8` service metadata. `GET /ping` is the dependency-free liveness
+probe — `astro-prompt-m8`'s server-only `ping()` calls this route, not the
+unmounted API-prefix root. `@mano8/astro-prompt-m8/compatibility` mirrors
+`CONTRACT_RANGE` and is wired into `PromptProvider`, which runs the preflight
+once per session and renders an incompatibility state instead of proceeding
+silently against a service outside its supported range.
 
 Interactive docs are available at:
 
