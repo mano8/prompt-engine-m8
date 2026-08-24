@@ -34,6 +34,13 @@ Transform templates into optimized prompts.
 - `GET /meta` (no auth) publishes `CONTRACT_NAME`/`CONTRACT_VERSION`/
   `CONTRACT_RANGE`/`SERVICE_VERSION` for the client compatibility preflight;
   `GET /ping` is the dependency-free liveness probe.
+- `contracts/openapi.json` is the served OpenAPI document committed as a file —
+  the machine-readable form of everything above, published so a consumer can
+  diff its own schemas against it rather than read service source.
+  `tests/test_openapi_snapshot.py` fails when the file and the served document
+  disagree; refresh it with
+  `PROMPT_ENGINE_M8_WRITE_OPENAPI=1 pytest tests/test_openapi_snapshot.py` and
+  treat the diff as a contract change. Nothing here reads a consumer.
 
 ## Standalone authority
 

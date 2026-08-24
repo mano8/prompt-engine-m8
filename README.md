@@ -29,6 +29,7 @@ The repository includes a Docker Compose development stack with Traefik,
 - [API Endpoints](#api-endpoints)
   - [List query parameters](#list-query-parameters)
   - [Compatibility preflight (`/meta`)](#compatibility-preflight-meta)
+  - [Published contract artifact (`contracts/openapi.json`)](#published-contract-artifact-contractsopenapijson)
 - [Dynamic Block Composition](#dynamic-block-composition)
 - [Quick Start](#quick-start)
 - [Environment Variables](#environment-variables)
@@ -201,6 +202,32 @@ http://localhost:9000/prompt/docs
 ```
 
 when `SET_DOCS=true`.
+
+### Published contract artifact (`contracts/openapi.json`)
+
+`contracts/openapi.json` is this service's OpenAPI document, committed as a
+file. It is the same spec `GET /prompt/openapi.json` serves, serialised with
+sorted keys and LF endings so a diff shows the contract change rather than a
+reordering or a checkout's line endings.
+
+It exists so a consumer has something to diff against. The list vocabulary,
+the required body fields and the mutating verbs are all published here, and a
+client that pins this contract can compare its own request and response
+schemas against the file instead of reading service source — which is how
+`astro-prompt-m8`'s `verify:contract-drift` gate works. Nothing in this
+repository reads a consumer; the artifact is published, and the diff is the
+consumer's side of the wire.
+
+`test_openapi_snapshot.py` fails when the file and the served document
+disagree, so the artifact can never describe a service that no longer exists.
+Refresh it after any change to a route, a schema or the list vocabulary:
+
+```bash
+PROMPT_ENGINE_M8_WRITE_OPENAPI=1 pytest tests/test_openapi_snapshot.py
+```
+
+Read the resulting diff as the contract change it is, and hand it to the
+consumers that pin this contract.
 
 ---
 
@@ -437,7 +464,7 @@ The CI workflow enforces:
 ruff format --check .
 ruff check .
 mypy promt_engine_service --ignore-missing-imports
-pytest --cov-report=xml --cov-fail-under=100
+pytest --cov-report=xml --cov-fail-under=100   # includes the contracts/openapi.json artifact check
 bandit -r promt_engine_service -x promt_engine_service/alembic --severity-level medium
 pip-audit -r promt_engine_service/requirements_dev.txt
 docker build -f promt_engine_service/Dockerfile -t prompt-engine-m8:ci-scan .
