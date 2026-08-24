@@ -411,6 +411,33 @@
         "title": "PromptBlockType",
         "type": "string"
       },
+      "PromptBlocksExport": {
+        "description": "Unpaginated prompt block export, capped at ``MAX_EXPORT_SIZE`` (`A-C8`).\n\n``count`` is the filtered set's true size, same as ``PromptBlocksPublic``.\n``truncated`` is ``True`` only when the filtered set exceeds the cap and\n``data`` therefore holds fewer rows than ``count`` — the signal a caller\nneeds to narrow the filter rather than assume the export is complete.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/PromptBlockPublic"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "data",
+          "count",
+          "truncated"
+        ],
+        "title": "PromptBlocksExport",
+        "type": "object"
+      },
       "PromptBlocksPublic": {
         "description": "Paginated prompt block list.",
         "properties": {
@@ -550,6 +577,33 @@
         ],
         "title": "PromptTemplateSortField",
         "type": "string"
+      },
+      "PromptTemplatesExport": {
+        "description": "Unpaginated prompt template export, capped at ``MAX_EXPORT_SIZE`` (`A-C8`).\n\nMirrors :class:`~promt_engine_service.db_models.prompts.PromptBlocksExport`:\n``count`` is the filtered set's true size, ``truncated`` is ``True`` only\nwhen ``data`` holds fewer rows than ``count`` because the cap was hit.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/PromptTemplateDict"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "count",
+          "data",
+          "truncated"
+        ],
+        "title": "PromptTemplatesExport",
+        "type": "object"
       },
       "PromptTemplatesList": {
         "description": "Prompt template list response.",
@@ -1741,6 +1795,127 @@
         ]
       }
     },
+    "/prompt/prompt-block/export/": {
+      "get": {
+        "description": "Export every prompt block in the filtered set, not one page of it (`A-C8`).\n\nCarries the same ``q``/``csrc``/``sort``/``order``/``f`` vocabulary as\n``GET /prompt-block/`` — deliberately no ``skip``/``limit``, since paging\na bulk export defeats the point of it. Bounded instead by\n``MAX_EXPORT_SIZE``: a filtered set larger than that returns the first\n``MAX_EXPORT_SIZE`` rows with ``truncated: true`` rather than materialising\nan unbounded result.",
+        "operationId": "prompt-block-prompt_block_export",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "csrc",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PromptBlockSearchField"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Csrc"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PromptBlockSortField"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sort"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ListSortOrder"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Order"
+            }
+          },
+          {
+            "description": "Comma-joined facet values, combined with OR. Allowed: role, task, context, instruction, example, format, dynamic, static, public, private.",
+            "in": "query",
+            "name": "f",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Comma-joined facet values, combined with OR. Allowed: role, task, context, instruction, example, format, dynamic, static, public, private.",
+              "maxLength": 200,
+              "title": "F",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptBlocksExport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseErrorBase"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Prompt Block Export",
+        "tags": [
+          "prompt-block"
+        ]
+      }
+    },
     "/prompt/prompt-block/get/{item_id}/": {
       "get": {
         "description": "Get a prompt block by ID.",
@@ -2281,6 +2456,127 @@
           }
         ],
         "summary": "Update Prompt Template",
+        "tags": [
+          "prompt-template"
+        ]
+      }
+    },
+    "/prompt/prompt-template/export/": {
+      "get": {
+        "description": "Export every prompt template in the filtered set, not one page of it\n(`A-C8`). Same contract as ``GET /prompt-block/export/``, over the\ntemplate vocabulary.",
+        "operationId": "prompt-template-prompt_template_export",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "csrc",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PromptTemplateSearchField"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Csrc"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PromptTemplateSortField"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sort"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ListSortOrder"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Order"
+            }
+          },
+          {
+            "description": "Comma-joined facet values, combined with OR. Allowed: public, private.",
+            "in": "query",
+            "name": "f",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Comma-joined facet values, combined with OR. Allowed: public, private.",
+              "maxLength": 200,
+              "title": "F",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptTemplatesExport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseErrorBase"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Prompt Template Export",
         "tags": [
           "prompt-template"
         ]

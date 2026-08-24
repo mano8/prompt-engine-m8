@@ -15,6 +15,16 @@ the single entry the version that ships actually carries.
 
 ### Added
 
+- **`GET /prompt-block/export/` and `GET /prompt-template/export/` (`A-C8`).**
+  The same `q`/`csrc`/`sort`/`order`/`f` vocabulary as the list routes, with no
+  `skip`/`limit` — a deliberately unpaginated read of the whole filtered set,
+  bounded by `MAX_EXPORT_SIZE = 5000` rather than a caller-supplied `limit`. A
+  filtered set larger than the cap returns the first `MAX_EXPORT_SIZE` rows
+  with `truncated: true` rather than materialising an unbounded result. Closes
+  the gap `C7`/`C8` left on `astro-prompt-m8`, where the block/template bundle
+  export buttons could only act on one fetched page because that is all a
+  server-driven table's list read ever returns.
+
 - **Declared list vocabulary (`C1`).** `promt_engine_service/schemas/list_params.py` names every value the list endpoints accept in `csrc`, `sort`, `order` and `f`, per resource, as enum members — so the allow-lists reach the OpenAPI document verbatim and a client can mirror them instead of guessing. `ListQueryController` in `controllers/prompts.py` is the single bridge from a declared name to a column or predicate, shared by all three list routes: an undeclared value is rejected, never silently ignored, and free-text `q` is bound as a parameter with `%`/`_` escaped rather than interpolated (`SEC-VALIDATE-UNTRUSTED-INPUT`). No route consumes this yet — `C2`/`C3` wire it.
 
 - **Server-driven list parameters on `GET /prompt-block/` and `GET /prompt-template/` (`C2`).** Both accept `q` (free-text over the declared columns), `csrc` (restrict `q` to one column), `f` (comma-joined facet values combined with `OR`), and `sort`/`order`. `sort=block_count` on templates orders by attached-block count via a correlated subquery. Additive: `skip`/`limit` behave exactly as before when the new parameters are absent, and an absent `sort` still adds no `ORDER BY`. `skip`/`limit` now reject negative/zero values with `422` instead of reaching the database.

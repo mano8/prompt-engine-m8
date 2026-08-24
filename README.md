@@ -131,12 +131,14 @@ Compose stack.
 | category | PUT | `/category/edit/{item_id}/` | JWT | Update a category |
 | category | DELETE | `/category/delete/{item_id}/` | JWT | Delete a category |
 | prompt-block | GET | `/prompt-block/` | JWT | List prompt blocks |
+| prompt-block | GET | `/prompt-block/export/` | JWT | Export every prompt block in the filtered set |
 | prompt-block | GET | `/prompt-block/get/{item_id}/` | JWT | Get a prompt block by ID |
 | prompt-block | GET | `/prompt-block/get_by_slug/{item_slug}/` | JWT | Get a prompt block by slug |
 | prompt-block | POST | `/prompt-block/add/` | JWT | Create a prompt block |
 | prompt-block | PUT | `/prompt-block/edit/{item_id}/` | JWT | Update a prompt block |
 | prompt-block | DELETE | `/prompt-block/delete/{item_id}/` | JWT | Delete an unused prompt block |
 | prompt-template | GET | `/prompt-template/` | JWT | List prompt templates with blocks |
+| prompt-template | GET | `/prompt-template/export/` | JWT | Export every prompt template in the filtered set |
 | prompt-template | GET | `/prompt-template/get/{item_id}/` | JWT | Get a prompt template by ID |
 | prompt-template | GET | `/prompt-template/get_by_slug/{item_slug}/` | JWT | Get a prompt template by slug |
 | prompt-template | GET | `/prompt-template/get-blocks/{item_id}/` | JWT | Get ordered template blocks |
@@ -182,6 +184,20 @@ Notes:
   attached blocks via a correlated subquery — it is not a real column.
 - Every route also answers plain `skip`/`limit` unchanged; the new parameters
   are additive and optional.
+
+### Bulk export (`A-C8`)
+
+`GET /prompt-block/export/` and `GET /prompt-template/export/` carry the same
+`q`/`csrc`/`sort`/`order`/`f` vocabulary as their list counterparts but accept
+no `skip`/`limit` — they answer the *whole* filtered set in one response, not
+one page of it. That is the point: a list route with a `limit` of 500 cannot
+answer "export everything currently filtered to" without a client stitching
+pages together, which is what a bulk-export button actually needs.
+
+Bounded by `MAX_EXPORT_SIZE = 5000` instead of a caller-supplied `limit`: a
+filtered set larger than that returns the first `MAX_EXPORT_SIZE` rows with
+`truncated: true` on the response rather than materialising an unbounded
+result. A caller that hits the cap narrows the filter.
 
 ### Compatibility preflight (`/meta`)
 

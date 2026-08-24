@@ -27,6 +27,11 @@ Transform templates into optimized prompts.
   `controllers/prompts.py`. An undeclared value is a `422`, never a silently
   ignored parameter. `count` in every list response is the filtered count.
   `limit` is bounded at `MAX_PAGE_SIZE = 500`; `q` at `MAX_SEARCH_LENGTH = 200`.
+- `GET /prompt-block/export/` and `GET /prompt-template/export/` (`A-C8`)
+  carry the same vocabulary as their list counterparts with no `skip`/`limit`,
+  returning the whole filtered set in one response, bounded by
+  `MAX_EXPORT_SIZE = 5000` with `truncated: true` on the response when the
+  filtered set exceeds it.
 - `POST /prompt-template/{id}/add-block/{block_id}/` and
   `PUT /prompt-template/{id}/set-block-position/{block_id}/` are the only
   verbs these paths answer; the state-mutating `GET` aliases they used to keep

@@ -80,6 +80,20 @@ class PromptBlocksPublic(SQLModel):
     count: int
 
 
+class PromptBlocksExport(SQLModel):
+    """Unpaginated prompt block export, capped at ``MAX_EXPORT_SIZE`` (`A-C8`).
+
+    ``count`` is the filtered set's true size, same as ``PromptBlocksPublic``.
+    ``truncated`` is ``True`` only when the filtered set exceeds the cap and
+    ``data`` therefore holds fewer rows than ``count`` — the signal a caller
+    needs to narrow the filter rather than assume the export is complete.
+    """
+
+    data: list[PromptBlockPublic]
+    count: int
+    truncated: bool
+
+
 class PromptTemplateBase(TimestampMixin, SQLModel):
     """Shared prompt template fields."""
 

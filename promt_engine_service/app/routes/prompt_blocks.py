@@ -16,9 +16,14 @@ from promt_engine_service.controllers.prompts import (
     ListQueryController,
     PromptsController,
 )
-from promt_engine_service.db_models.prompts import PromptBlock, PromptBlocksPublic
+from promt_engine_service.db_models.prompts import (
+    PromptBlock,
+    PromptBlocksExport,
+    PromptBlocksPublic,
+)
 from promt_engine_service.schemas.list_params import (
     PROMPT_BLOCK_LIST_VOCABULARY,
+    MAX_EXPORT_SIZE,
     MAX_PAGE_SIZE,
     MAX_SEARCH_LENGTH,
     PromptBlockSearchParam,
@@ -98,6 +103,69 @@ def prompt_block_list(
         return PromptBlocksPublic(
             data=session.exec(statement).all(),
             count=session.exec(count_statement).one(),
+        )
+    except HTTPException:
+        raise
+    except Exception as ex:
+        return BaseController.handle_exception(ex=ex, session=session)
+
+
+@router.get(
+    "/export/",
+    response_model=PromptBlocksExport,
+    responses=BaseController.get_error_responses(),
+)
+def prompt_block_export(
+    session: SessionDep,
+    current_user: CurrentPrincipal,
+    q: Annotated[str, Query(max_length=MAX_SEARCH_LENGTH)] = "",
+    csrc: PromptBlockSearchParam = None,
+    sort: PromptBlockSortParam = None,
+    order: SortOrderParam = None,
+    f: Annotated[
+        str,
+        Query(
+            max_length=MAX_SEARCH_LENGTH,
+            description=(
+                "Comma-joined facet values, combined with OR. Allowed: "
+                + ", ".join(PROMPT_BLOCK_LIST_VOCABULARY.facets)
+                + "."
+            ),
+        ),
+    ] = "",
+) -> Any:
+    """Export every prompt block in the filtered set, not one page of it (`A-C8`).
+
+    Carries the same ``q``/``csrc``/``sort``/``order``/``f`` vocabulary as
+    ``GET /prompt-block/`` — deliberately no ``skip``/``limit``, since paging
+    a bulk export defeats the point of it. Bounded instead by
+    ``MAX_EXPORT_SIZE``: a filtered set larger than that returns the first
+    ``MAX_EXPORT_SIZE`` rows with ``truncated: true`` rather than materialising
+    an unbounded result.
+    """
+    try:
+        statement = select(PromptBlock)
+        count_statement = select(func.count()).select_from(PromptBlock)
+        predicates = ListQueryController.prompt_block_predicates(q=q, csrc=csrc, f=f)
+        visibility = PromptsController.visibility_filter(PromptBlock, current_user)
+        if visibility is not None:
+            predicates.append(visibility)
+        for predicate in predicates:
+            statement = statement.where(predicate)
+            count_statement = count_statement.where(predicate)
+        if sort is not None:
+            statement = statement.order_by(
+                ListQueryController.order_clause(
+                    ListQueryController.BLOCK_SORT_COLUMNS, sort, order
+                )
+            )
+        statement = statement.limit(MAX_EXPORT_SIZE + 1)
+        rows = list(session.exec(statement).all())
+        truncated = len(rows) > MAX_EXPORT_SIZE
+        return PromptBlocksExport(
+            data=rows[:MAX_EXPORT_SIZE],
+            count=session.exec(count_statement).one(),
+            truncated=truncated,
         )
     except HTTPException:
         raise
