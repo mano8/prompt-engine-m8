@@ -4,14 +4,13 @@ All notable changes to prompt-engine-m8 are documented here.
 
 ## [Unreleased]
 
-## [2.0.0] - 2026-08-20
+## [2.1.0] - 2026-08-30
 
-Folded from `[Unreleased]` (`C18`): `2.0.0` was never published (published:
-`1.0.0`), so this release note is the consolidation of the full contract-
-completeness wave — the fa-auth 2.0 stack-alignment work dated 2026-08-10
-below, plus the server-driven list contract, mutating-verb fix and
-publish-readiness hardening that landed under `[Unreleased]` afterward — into
-the single entry the version that ships actually carries.
+Additive contract release. Everything below landed **after** `2.0.0` was
+published and was, until this entry, documented inside `2.0.0`'s own section —
+so the changelog of a shipped artifact claimed routes that artifact does not
+serve (`G14`). The entries are moved here unchanged and the version is bumped,
+which is the correction rather than new work.
 
 ### Added
 
@@ -24,6 +23,45 @@ the single entry the version that ships actually carries.
   the gap `C7`/`C8` left on `astro-prompt-m8`, where the block/template bundle
   export buttons could only act on one fetched page because that is all a
   server-driven table's list read ever returns.
+
+- **The served OpenAPI document is published as a committed artifact (`A-C1`).**
+  `contracts/openapi.json` is the spec the app actually serves, serialised
+  deterministically, and `tests/test_openapi_snapshot.py` fails when the two
+  disagree — so the artifact can never describe a service that no longer
+  exists. `test_contract_fidelity.py` (`C6`) already asserted the served
+  document against `schemas/list_params.py`, but built it inside the test
+  process and threw it away, leaving a consumer with nothing to diff against.
+  Refresh with `PROMPT_ENGINE_M8_WRITE_OPENAPI=1 pytest
+  tests/test_openapi_snapshot.py`.
+
+### Changed
+
+- **BREAKING — `CONTRACT_VERSION` moved `2.0.0` → `2.1.0` and `CONTRACT_RANGE`
+  moved `>=2.0.0 <3.0.0` → `>=2.1.0 <3.0.0`.** `A-C8` added routes while leaving
+  the contract axis on `2.0.0`, which meant a host running the published
+  `prompt-engine-m8:2.0.0` image passed a client's `/meta` preflight cleanly and
+  then `404`ed on "Export all" — `H12` re-formed one release later, the exact
+  defect `C17` spent a step closing. The axis now names the surface it
+  describes, and the supported range moves with it: `2.1.0` is the floor this
+  release supports. The export routes are additive, so a 2.0 caller is still
+  *served* in practice; the range states what is supported, not what is
+  tolerated, and a 2.0 client is expected to move with the pair.
+  ⚠️ **Consequence for an already-published client.**
+  `@mano8/astro-prompt-m8@2.0.0` compares the contract axis by exact string
+  equality and therefore refuses a `2.1.0` service at preflight. Upgrade the
+  pair together — the service and its client have released as a pair since
+  `1.1.1`/`1.0.0`, for this reason.
+
+## [2.0.0] - 2026-08-20
+
+Folded from `[Unreleased]` (`C18`): `2.0.0` was never published (published:
+`1.0.0`), so this release note is the consolidation of the full contract-
+completeness wave — the fa-auth 2.0 stack-alignment work dated 2026-08-10
+below, plus the server-driven list contract, mutating-verb fix and
+publish-readiness hardening that landed under `[Unreleased]` afterward — into
+the single entry the version that ships actually carries.
+
+### Added
 
 - **Declared list vocabulary (`C1`).** `promt_engine_service/schemas/list_params.py` names every value the list endpoints accept in `csrc`, `sort`, `order` and `f`, per resource, as enum members — so the allow-lists reach the OpenAPI document verbatim and a client can mirror them instead of guessing. `ListQueryController` in `controllers/prompts.py` is the single bridge from a declared name to a column or predicate, shared by all three list routes: an undeclared value is rejected, never silently ignored, and free-text `q` is bound as a parameter with `%`/`_` escaped rather than interpolated (`SEC-VALIDATE-UNTRUSTED-INPUT`). No route consumes this yet — `C2`/`C3` wire it.
 

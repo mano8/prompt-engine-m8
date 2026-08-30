@@ -91,19 +91,36 @@ def test_publish_yaml_has_cosign_sign() -> None:
 # ── Contract settings ─────────────────────────────────────────────────────────
 
 
-def test_contract_version_is_2_0() -> None:
+def test_contract_version_is_2_1() -> None:
+    """`A-C8`'s export routes moved the contract axis 2.0.0 -> 2.1.0.
+
+    Pinned by exact value on purpose: the axis must not drift as a side effect
+    of a route landing. `G14` is what happens when it does — `A-C8` shipped its
+    routes while this value stayed on 2.0.0, so a client's /meta preflight
+    passed against a service that then 404ed the very routes it had just been
+    told existed. Moving this literal is a deliberate act with a changelog
+    entry, which is the point.
+    """
     from promt_engine_service.core.config import settings
 
-    assert settings.CONTRACT_VERSION == "2.0.0", (
-        f"CONTRACT_VERSION must be '2.0.0', got {settings.CONTRACT_VERSION!r}"
+    assert settings.CONTRACT_VERSION == "2.1.0", (
+        f"CONTRACT_VERSION must be '2.1.0', got {settings.CONTRACT_VERSION!r}"
     )
 
 
 def test_contract_range_is_2_x() -> None:
+    """The supported floor moved with the axis: `>=2.1.0 <3.0.0`.
+
+    The floor is 2.1.0 rather than 2.0.0 even though the export routes are
+    additive, because `astro-prompt-m8` compares the contract axis by exact
+    string equality — an `astro-prompt-m8@2.0.0` client refuses a 2.1.0 service
+    on its own side regardless of what this range says. Declaring `>=2.0.0`
+    would advertise support nothing can take up.
+    """
     from promt_engine_service.core.config import settings
 
-    assert settings.CONTRACT_RANGE == ">=2.0.0 <3.0.0", (
-        f"CONTRACT_RANGE must be '>=2.0.0 <3.0.0', got {settings.CONTRACT_RANGE!r}"
+    assert settings.CONTRACT_RANGE == ">=2.1.0 <3.0.0", (
+        f"CONTRACT_RANGE must be '>=2.1.0 <3.0.0', got {settings.CONTRACT_RANGE!r}"
     )
 
 

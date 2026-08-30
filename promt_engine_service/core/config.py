@@ -27,8 +27,12 @@ class Settings(ConsumerServiceSettings):
 
     SERVICE_VERSION: str = __version__
     CONTRACT_NAME: str = "prompt-engine-m8"
-    CONTRACT_VERSION: str = "2.0.0"
-    CONTRACT_RANGE: str = ">=2.0.0 <3.0.0"
+    CONTRACT_VERSION: str = "2.1.0"
+    #: Raised with the contract axis: the supported floor is 2.1.0, not 2.0.0.
+    #: ``A-C8``'s export routes are additive, so a 2.0 caller is still *served*,
+    #: but the range states what this release supports rather than what it
+    #: happens to tolerate — a 2.0 client is expected to move with the pair.
+    CONTRACT_RANGE: str = ">=2.1.0 <3.0.0"
 
 
 try:
