@@ -148,6 +148,8 @@ def test_prompt_block_routes(session, owner, other_user, superuser) -> None:
 
     assert prompt_blocks.prompt_block_list(session, owner).count == 1
     assert prompt_blocks.prompt_block_list(session, superuser).count == 1
+    assert prompt_blocks.prompt_block_export(session, owner, sort="name").count == 1
+    assert prompt_blocks.prompt_block_export(session, superuser).count == 1
     assert prompt_blocks.get_prompt_block(session, owner, block_id).success is True
     assert (
         prompt_blocks.get_prompt_block_by_slug(session, owner, "block").success is True
@@ -223,6 +225,9 @@ def test_prompt_block_routes_handle_unexpected_errors(monkeypatch, owner) -> Non
     item_in = PromptBlockModel(name="Bad", content="content", type=PromptBlockType.TASK)
 
     assert prompt_blocks.prompt_block_list(broken, owner) == {"handled": "RuntimeError"}
+    assert prompt_blocks.prompt_block_export(broken, owner) == {
+        "handled": "RuntimeError"
+    }
     assert prompt_blocks.get_prompt_block(broken, owner, 1) == {
         "handled": "RuntimeError"
     }
@@ -267,6 +272,10 @@ def test_prompt_template_routes(session, owner, superuser) -> None:
 
     assert prompt_templates.prompt_template_list(session, owner).count == 1
     assert prompt_templates.prompt_template_list(session, superuser).count == 1
+    assert (
+        prompt_templates.prompt_template_export(session, owner, sort="name").count == 1
+    )
+    assert prompt_templates.prompt_template_export(session, superuser).count == 1
     assert (
         prompt_templates.get_prompt_template(session, owner, template_id).success
         is True
@@ -408,6 +417,9 @@ def test_prompt_template_routes_handle_unexpected_errors(monkeypatch, owner) -> 
     item_in = PromptTemplateModel(name="Bad")
 
     assert prompt_templates.prompt_template_list(broken, owner) == {
+        "handled": "RuntimeError"
+    }
+    assert prompt_templates.prompt_template_export(broken, owner) == {
         "handled": "RuntimeError"
     }
     assert prompt_templates.get_prompt_template(broken, owner, 1) == {

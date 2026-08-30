@@ -20,6 +20,7 @@ from promt_engine_service.controllers.prompts import (
 from promt_engine_service.db_models.prompts import PromptTemplate, TemplateBlock
 from promt_engine_service.schemas.list_params import (
     PROMPT_TEMPLATE_LIST_VOCABULARY,
+    MAX_EXPORT_SIZE,
     MAX_PAGE_SIZE,
     MAX_SEARCH_LENGTH,
     PromptTemplateSearchParam,
@@ -29,6 +30,7 @@ from promt_engine_service.schemas.list_params import (
 from promt_engine_service.schemas.prompts import (
     DynamicBlock,
     PromptTemplateModel,
+    PromptTemplatesExport,
     PromptTemplatesList,
 )
 
@@ -107,6 +109,69 @@ def prompt_template_list(
         return PromptTemplatesList(
             count=session.exec(count_statement).one(),
             data=PromptsController.dump_prompt_templates(items),
+        )
+    except HTTPException:
+        raise
+    except Exception as ex:
+        return BaseController.handle_exception(ex=ex, session=session)
+
+
+@router.get(
+    "/export/",
+    response_model=PromptTemplatesExport,
+    responses=BaseController.get_error_responses(),
+)
+def prompt_template_export(
+    session: SessionDep,
+    current_user: CurrentPrincipal,
+    q: Annotated[str, Query(max_length=MAX_SEARCH_LENGTH)] = "",
+    csrc: PromptTemplateSearchParam = None,
+    sort: PromptTemplateSortParam = None,
+    order: SortOrderParam = None,
+    f: Annotated[
+        str,
+        Query(
+            max_length=MAX_SEARCH_LENGTH,
+            description=(
+                "Comma-joined facet values, combined with OR. Allowed: "
+                + ", ".join(PROMPT_TEMPLATE_LIST_VOCABULARY.facets)
+                + "."
+            ),
+        ),
+    ] = "",
+) -> Any:
+    """Export every prompt template in the filtered set, not one page of it
+    (`A-C8`). Same contract as ``GET /prompt-block/export/``, over the
+    template vocabulary.
+    """
+    try:
+        statement = select(PromptTemplate).options(
+            selectinload(cast(Any, PromptTemplate.blocks)).selectinload(
+                cast(Any, TemplateBlock.block)
+            )
+        )
+        count_statement = select(func.count()).select_from(PromptTemplate)
+        predicates = ListQueryController.prompt_template_predicates(q=q, csrc=csrc, f=f)
+        visibility = PromptsController.visibility_filter(PromptTemplate, current_user)
+        if visibility is not None:
+            predicates.append(visibility)
+        for predicate in predicates:
+            statement = statement.where(predicate)
+            count_statement = count_statement.where(predicate)
+        if sort is not None:
+            statement = statement.order_by(
+                ListQueryController.order_clause(
+                    ListQueryController.TEMPLATE_SORT_COLUMNS, sort, order
+                )
+            )
+        statement = statement.limit(MAX_EXPORT_SIZE + 1)
+        items = list(session.exec(statement).all())
+        truncated = len(items) > MAX_EXPORT_SIZE
+        items = items[:MAX_EXPORT_SIZE]
+        return PromptTemplatesExport(
+            count=session.exec(count_statement).one(),
+            data=PromptsController.dump_prompt_templates(items),
+            truncated=truncated,
         )
     except HTTPException:
         raise

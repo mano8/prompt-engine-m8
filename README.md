@@ -27,6 +27,9 @@ The repository includes a Docker Compose development stack with Traefik,
 - [Architecture](#architecture)
 - [Docker Compose Stack](#docker-compose-stack)
 - [API Endpoints](#api-endpoints)
+  - [List query parameters](#list-query-parameters)
+  - [Compatibility preflight (`/meta`)](#compatibility-preflight-meta)
+  - [Published contract artifact (`contracts/openapi.json`)](#published-contract-artifact-contractsopenapijson)
 - [Dynamic Block Composition](#dynamic-block-composition)
 - [Quick Start](#quick-start)
 - [Environment Variables](#environment-variables)
@@ -128,12 +131,14 @@ Compose stack.
 | category | PUT | `/category/edit/{item_id}/` | JWT | Update a category |
 | category | DELETE | `/category/delete/{item_id}/` | JWT | Delete a category |
 | prompt-block | GET | `/prompt-block/` | JWT | List prompt blocks |
+| prompt-block | GET | `/prompt-block/export/` | JWT | Export every prompt block in the filtered set |
 | prompt-block | GET | `/prompt-block/get/{item_id}/` | JWT | Get a prompt block by ID |
 | prompt-block | GET | `/prompt-block/get_by_slug/{item_slug}/` | JWT | Get a prompt block by slug |
 | prompt-block | POST | `/prompt-block/add/` | JWT | Create a prompt block |
 | prompt-block | PUT | `/prompt-block/edit/{item_id}/` | JWT | Update a prompt block |
 | prompt-block | DELETE | `/prompt-block/delete/{item_id}/` | JWT | Delete an unused prompt block |
 | prompt-template | GET | `/prompt-template/` | JWT | List prompt templates with blocks |
+| prompt-template | GET | `/prompt-template/export/` | JWT | Export every prompt template in the filtered set |
 | prompt-template | GET | `/prompt-template/get/{item_id}/` | JWT | Get a prompt template by ID |
 | prompt-template | GET | `/prompt-template/get_by_slug/{item_slug}/` | JWT | Get a prompt template by slug |
 | prompt-template | GET | `/prompt-template/get-blocks/{item_id}/` | JWT | Get ordered template blocks |
@@ -147,6 +152,65 @@ Compose stack.
 | dashboard | GET | `/dashboard/users/activity/` | JWT | All-user prompt activity summary |
 | dashboard | GET | `/dashboard/users/activity/current/` | JWT | Current-user prompt activity summary |
 
+### List query parameters
+
+`GET /prompt-block/`, `GET /prompt-template/` and `GET /category/` accept
+`skip`/`limit` plus a declared, additive list-query vocabulary — every value
+is validated against an allow-list published in the OpenAPI document
+(`promt_engine_service/schemas/list_params.py`); an undeclared value is
+rejected with `422`, never silently ignored.
+
+| Param | Meaning | `prompt-block` | `prompt-template` | `category` |
+| --- | --- | --- | --- | --- |
+| `q` | Free-text search, bound as a parameter (never interpolated) | `name`, `slug`, `description`, `content` | `name`, `slug`, `description` | `name`, `slug` |
+| `csrc` | Restrict `q` to one of its columns | same as `q` | same as `q` | not offered |
+| `sort` | Column to order by | `id`, `name`, `slug`, `type`, `is_dynamic`, `is_public`, `created_at`, `updated_at` | `id`, `name`, `slug`, `is_public`, `block_count`, `created_at`, `updated_at` | `id`, `name`, `slug`, `type`, `created_at`, `updated_at` |
+| `order` | `asc` \| `desc` | ✓ | ✓ | ✓ |
+| `f` | Comma-joined facet values, combined with `OR` | block type axis + `dynamic`/`static`/`public`/`private` | `public`/`private` | not offered |
+
+Notes:
+
+- `limit` is bounded at `MAX_PAGE_SIZE = 500` (published as `maximum` in the
+  OpenAPI schema); `q` is bounded at `MAX_SEARCH_LENGTH = 200` characters.
+  `q` compiles to a leading-wildcard `LIKE` over every declared column —
+  `content` included, which is unindexed text — so the request payload is
+  bounded even though the underlying scan is a function of table size and
+  indexing rather than of `limit`.
+- `count` in every list response is the **filtered** count, not the count of
+  everything visible to the caller. A client that never sends `q`/`f` sees no
+  difference; one that does gets a paginator that agrees with its own result
+  set.
+- `sort=block_count` on `GET /prompt-template/` orders by the number of
+  attached blocks via a correlated subquery — it is not a real column.
+- Every route also answers plain `skip`/`limit` unchanged; the new parameters
+  are additive and optional.
+
+### Bulk export (`A-C8`)
+
+`GET /prompt-block/export/` and `GET /prompt-template/export/` carry the same
+`q`/`csrc`/`sort`/`order`/`f` vocabulary as their list counterparts but accept
+no `skip`/`limit` — they answer the *whole* filtered set in one response, not
+one page of it. That is the point: a list route with a `limit` of 500 cannot
+answer "export everything currently filtered to" without a client stitching
+pages together, which is what a bulk-export button actually needs.
+
+Bounded by `MAX_EXPORT_SIZE = 5000` instead of a caller-supplied `limit`: a
+filtered set larger than that returns the first `MAX_EXPORT_SIZE` rows with
+`truncated: true` on the response rather than materialising an unbounded
+result. A caller that hits the cap narrows the filter.
+
+### Compatibility preflight (`/meta`)
+
+`GET /meta` (mounted with no auth requirement) publishes
+`CONTRACT_NAME = "prompt-engine-m8"`, `CONTRACT_VERSION`, `CONTRACT_RANGE`
+(currently `>=2.0.0 <3.0.0`) and `SERVICE_VERSION` alongside the generic
+`fastapi-m8` service metadata. `GET /ping` is the dependency-free liveness
+probe — `astro-prompt-m8`'s server-only `ping()` calls this route, not the
+unmounted API-prefix root. `@mano8/astro-prompt-m8/compatibility` mirrors
+`CONTRACT_RANGE` and is wired into `PromptProvider`, which runs the preflight
+once per session and renders an incompatibility state instead of proceeding
+silently against a service outside its supported range.
+
 Interactive docs are available at:
 
 ```text
@@ -154,6 +218,32 @@ http://localhost:9000/prompt/docs
 ```
 
 when `SET_DOCS=true`.
+
+### Published contract artifact (`contracts/openapi.json`)
+
+`contracts/openapi.json` is this service's OpenAPI document, committed as a
+file. It is the same spec `GET /prompt/openapi.json` serves, serialised with
+sorted keys and LF endings so a diff shows the contract change rather than a
+reordering or a checkout's line endings.
+
+It exists so a consumer has something to diff against. The list vocabulary,
+the required body fields and the mutating verbs are all published here, and a
+client that pins this contract can compare its own request and response
+schemas against the file instead of reading service source — which is how
+`astro-prompt-m8`'s `verify:contract-drift` gate works. Nothing in this
+repository reads a consumer; the artifact is published, and the diff is the
+consumer's side of the wire.
+
+`test_openapi_snapshot.py` fails when the file and the served document
+disagree, so the artifact can never describe a service that no longer exists.
+Refresh it after any change to a route, a schema or the list vocabulary:
+
+```bash
+PROMPT_ENGINE_M8_WRITE_OPENAPI=1 pytest tests/test_openapi_snapshot.py
+```
+
+Read the resulting diff as the contract change it is, and hand it to the
+consumers that pin this contract.
 
 ---
 
@@ -390,7 +480,7 @@ The CI workflow enforces:
 ruff format --check .
 ruff check .
 mypy promt_engine_service --ignore-missing-imports
-pytest --cov-report=xml --cov-fail-under=100
+pytest --cov-report=xml --cov-fail-under=100   # includes the contracts/openapi.json artifact check
 bandit -r promt_engine_service -x promt_engine_service/alembic --severity-level medium
 pip-audit -r promt_engine_service/requirements_dev.txt
 docker build -f promt_engine_service/Dockerfile -t prompt-engine-m8:ci-scan .

@@ -18,6 +18,35 @@ Transform templates into optimized prompts.
   banned-api rule (`auth_sdk_m8`); `ruff check .` fails on any direct import
   outside `tests/`.
 
+## Contract surface
+
+- `GET /prompt-block/`, `GET /prompt-template/` and `GET /category/` accept
+  `skip`/`limit` plus a declared, additive list-query vocabulary
+  (`q`/`csrc`/`sort`/`order`/`f`, per resource) published in
+  `schemas/list_params.py` and applied by `ListQueryController` in
+  `controllers/prompts.py`. An undeclared value is a `422`, never a silently
+  ignored parameter. `count` in every list response is the filtered count.
+  `limit` is bounded at `MAX_PAGE_SIZE = 500`; `q` at `MAX_SEARCH_LENGTH = 200`.
+- `GET /prompt-block/export/` and `GET /prompt-template/export/` (`A-C8`)
+  carry the same vocabulary as their list counterparts with no `skip`/`limit`,
+  returning the whole filtered set in one response, bounded by
+  `MAX_EXPORT_SIZE = 5000` with `truncated: true` on the response when the
+  filtered set exceeds it.
+- `POST /prompt-template/{id}/add-block/{block_id}/` and
+  `PUT /prompt-template/{id}/set-block-position/{block_id}/` are the only
+  verbs these paths answer; the state-mutating `GET` aliases they used to keep
+  as a deprecated compatibility window are gone.
+- `GET /meta` (no auth) publishes `CONTRACT_NAME`/`CONTRACT_VERSION`/
+  `CONTRACT_RANGE`/`SERVICE_VERSION` for the client compatibility preflight;
+  `GET /ping` is the dependency-free liveness probe.
+- `contracts/openapi.json` is the served OpenAPI document committed as a file —
+  the machine-readable form of everything above, published so a consumer can
+  diff its own schemas against it rather than read service source.
+  `tests/test_openapi_snapshot.py` fails when the file and the served document
+  disagree; refresh it with
+  `PROMPT_ENGINE_M8_WRITE_OPENAPI=1 pytest tests/test_openapi_snapshot.py` and
+  treat the diff as a contract change. Nothing here reads a consumer.
+
 ## Standalone authority
 
 This file, repository documentation, and existing CI are the authoritative local

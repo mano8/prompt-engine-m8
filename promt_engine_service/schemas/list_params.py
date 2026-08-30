@@ -34,6 +34,15 @@ MAX_SEARCH_LENGTH = 200
 #: of ``limit``. The tables page at 10/20/40, so this leaves wide headroom.
 MAX_PAGE_SIZE = 500
 
+#: Upper bound on an ``/export/`` read (`A-C8`). Exporting the whole filtered
+#: set is deliberately unpaginated — there is no ``skip``/``limit`` to bound
+#: what one request returns — so this is the safety ceiling instead. A
+#: filtered set larger than this sets ``truncated: true`` on the response
+#: rather than materialising an unbounded result; a caller that needs the rest
+#: narrows the filter. Ten times ``MAX_PAGE_SIZE``: generous for a bulk
+#: download, still a fixed number of rows a request can never exceed.
+MAX_EXPORT_SIZE = 5000
+
 #: ``f`` carries several facet values in one query parameter.
 FACET_SEPARATOR = ","
 

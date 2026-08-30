@@ -51,6 +51,19 @@ class PromptTemplatesList(BaseModel):
     data: list[PromptTemplateDict]
 
 
+class PromptTemplatesExport(BaseModel):
+    """Unpaginated prompt template export, capped at ``MAX_EXPORT_SIZE`` (`A-C8`).
+
+    Mirrors :class:`~promt_engine_service.db_models.prompts.PromptBlocksExport`:
+    ``count`` is the filtered set's true size, ``truncated`` is ``True`` only
+    when ``data`` holds fewer rows than ``count`` because the cap was hit.
+    """
+
+    count: int
+    data: list[PromptTemplateDict]
+    truncated: bool
+
+
 class DynamicBlock(BaseModel):
     """Dynamic content supplied when composing a template."""
 
