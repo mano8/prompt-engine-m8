@@ -152,6 +152,12 @@ Initialize keys and local certificates:
 bash init.sh
 ```
 
+Re-running this on a stack that already has a keypair does not regenerate it,
+but it does re-check `ACCESS_KEY_ID` against the mounted key and re-binds it
+(with a `NOTE:`) if the two have drifted apart, instead of skipping silently.
+Use `--rotate-keys` to actually generate a new keypair with the JWKS overlap
+window.
+
 On Windows, run this from Git Bash. Start the stack:
 
 ```sh
