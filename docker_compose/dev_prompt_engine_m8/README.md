@@ -34,6 +34,13 @@ bash init.sh
 
 Edit `.env`, `auth.env`, and `prompt.env` so every `changethis` is replaced before starting the stack.
 
+Re-running `bash init.sh` after keys already exist does not regenerate them,
+but it does re-derive `kid` from the mounted `keys/public.pem` and check it
+against `ACCESS_KEY_ID` in `auth.env`: a match is confirmed, an unset value is
+written, and a stale value is re-bound with a `NOTE:` naming the correction —
+it never silently skips over an unbound `kid`. Use `--rotate-keys` to actually
+generate a new keypair with the JWKS overlap window.
+
 Start:
 
 ```sh
