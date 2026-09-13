@@ -4,6 +4,52 @@ All notable changes to prompt-engine-m8 are documented here.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-13
+
+Dependency realignment onto the published JWKS `kid`/key-binding release
+train. No route, schema, or contract change: `CONTRACT_VERSION` stays `2.1.0`
+and `CONTRACT_RANGE` stays `>=2.1.0 <3.0.0`, so `@mano8/astro-prompt-m8`'s
+preflight admits this release unchanged. Steps `W3.1`, `W3.2` and `W3.6` of
+the 2026-09-08 JWKS `kid`/key-binding remediation plan.
+
+### Changed
+
+- **`fastapi-m8` floor raised `>=4.4.0,<5.0.0` → `>=4.5.1,<5.0.0`**
+  (`promt_engine_service/requirements_base.txt`); `constraints.txt` and
+  `constraints-all.txt` regenerated. `4.5.1` is the first framework release
+  whose declared floor *and* compiled constraints both resolve
+  `auth-sdk-m8>=3.2.0`, so the transitive `auth-sdk-m8` pin moves
+  `3.1.3` → `3.2.0`: `JwksKeyResolver` now recovers from key material
+  changing under an unchanged `kid` within one refresh interval instead of
+  one cache TTL, and cannot be made to storm the issuer. The SDK is still
+  reached only through `fastapi-m8` — no direct `auth-sdk-m8` declaration is
+  added. Dev-only movement from the regeneration: `mypy 2.3.0 → 2.3.1`,
+  `ruff 0.15.18 → 0.16.3`, `colorama` surfaced as a `click` dependency.
+- **`dev_prompt_engine_m8` issuer image `tepochtli/fa-auth-m8:2.2.0` →
+  `2.2.1`** (`docker_compose/dev_prompt_engine_m8/docker-compose.yml`).
+  `2.2.1` is a patch of the issuer: its bundled `init-keys.sh` verifies the
+  `kid` binding on a keys-exist rerun instead of skipping it. Published on
+  Docker Hub at index digest `sha256:12ac4d51…9272`.
+- **`docker_compose/shared/scripts/init-keys.sh` re-vendored from
+  `fa-auth-m8`**, replacing a copy that predated the issuer's `2.1.0` fixes.
+  `kid` is now derived from canonical SPKI DER bytes — the same derivation
+  the service uses and refuses to boot without; a rerun with keys already
+  present re-derives `kid` and checks it against `ACCESS_KEY_ID` in
+  `auth.env` (writes it when unset, re-binds with a `NOTE:` when stale)
+  rather than skipping silently; `--rotate-keys` keeps the previous public
+  key as `public_old.pem` for the JWKS overlap window. Both stack READMEs
+  document the rerun behaviour.
+- `README.md`: the `/meta` section's quoted `CONTRACT_RANGE` corrected from
+  `>=2.0.0 <3.0.0` to the `>=2.1.0 <3.0.0` the service has published since
+  `2.1.0` (doc drift only).
+
+### Deployment note
+
+`fa-auth-m8 2.1.0+` refuses to boot when `ACCESS_KEY_ID` is not the DER
+fingerprint of the key it serves. A host taking this release should run
+`bash init.sh` once before starting the stack — it now verifies and, if
+needed, re-binds the value.
+
 ## [2.1.0] - 2026-08-30
 
 Additive contract release. Everything below landed **after** `2.0.0` was

@@ -203,7 +203,7 @@ result. A caller that hits the cap narrows the filter.
 
 `GET /meta` (mounted with no auth requirement) publishes
 `CONTRACT_NAME = "prompt-engine-m8"`, `CONTRACT_VERSION`, `CONTRACT_RANGE`
-(currently `>=2.0.0 <3.0.0`) and `SERVICE_VERSION` alongside the generic
+(currently `>=2.1.0 <3.0.0`) and `SERVICE_VERSION` alongside the generic
 `fastapi-m8` service metadata. `GET /ping` is the dependency-free liveness
 probe — `astro-prompt-m8`'s server-only `ping()` calls this route, not the
 unmounted API-prefix root. `@mano8/astro-prompt-m8/compatibility` mirrors
