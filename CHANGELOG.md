@@ -4,6 +4,54 @@ All notable changes to prompt-engine-m8 are documented here.
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-09-20
+
+Debian patch-layer convergence — `B23-converge-patch-layer` (Wave 6) of the
+workspace's consumer-alignment closure plan, finding `G18`; the form is
+recorded once, in the workspace's `.workspace/context/debian-patch-layer.md`,
+and the five service images now carry it byte-for-byte. Image-only patch
+release: no route, schema, contract or dependency change. `SERVICE_VERSION`
+(and `contracts/openapi.json`'s `info.version`) move to `2.2.1`;
+`CONTRACT_VERSION` stays `2.1.0` and `CONTRACT_RANGE` `>=2.1.0 <3.0.0`, so
+`@mano8/astro-prompt-m8`'s preflight admits this release unchanged.
+
+### Security
+
+- **The runtime image's Debian layer is now the fleet's one form:**
+  `apt-get update && apt-get upgrade -y`, nothing exact-pinned, nothing
+  installed that the base does not already ship. `curl` is no longer
+  installed: its exact `=8.14.1-2+deb13u5` pin was the one package
+  `apt-get upgrade -y` could not raise, it had already been hand-raised once
+  (`deb13u4` → `deb13u5`, `d9a62fb`) for an advisory on a package nothing in
+  this image uses — no `HEALTHCHECK`, the Compose healthchecks probe with
+  `python -c "import urllib.request…"`, and the only `curl` calls in this
+  repository run outside the image.
+- **Base image raised to the current `python:3.14-slim` digest
+  `caaf356f40667c496d405780745b9ac25771c189a51dfcc42430d531ea09f8a2`**
+  (Debian 13.7, Python 3.14.7, created 2026-09-19), from `cad9a2…` (Debian 13.6).
+  All five service images now pin this same digest, and from here on base
+  digests move together — on advisory or on cadence, never one repository
+  alone. Measured inside the new base: every package this fleet had ever
+  pinned ships at or above its pinned version (`openssl` `3.5.7-1~deb13u2`,
+  `gzip` `1.13-1+deb13u1`, `libpcre2-8-0` `10.46-1~deb13u2`, `libsqlite3-0`
+  `3.46.1-7+deb13u2`, `perl-base` `5.40.1-6+deb13u1`), so `upgrade -y` is a
+  no-op today and self-heals from the next advisory on.
+- **`anyio` `4.14.1` → `4.14.2` in `promt_engine_service/requirements_prod.lock`** — CVE-2026-63374
+  (CRITICAL, TLS certificate spoofing via IDNA 2003 host-name encoding in
+  `TLSStream`) and CVE-2026-63349 (HIGH, `run_process`/`open_process`
+  retaining the parent's supplementary groups), both published 2026-09-18,
+  after this repository's last green `trivy-image` run on `main`. Transitive
+  (under `fastapi-m8`, `httpx` and `starlette`), so the hash-locked release
+  set is the only place it
+  appears; regenerated with `pip-compile --upgrade-package anyio==4.14.2`,
+  so exactly one version line moves. Found by this release's own pre-PR
+  Trivy read — the gate's freshness limit, not a property of the diff.
+- Verified before the change was proposed: `docker build --no-cache` green
+  on the new Dockerfile; Trivy at the `trivy-image` gate's own settings
+  (`severity: CRITICAL,HIGH`, `ignore-unfixed: true`) reports **0**
+  findings; inside the built container `openssl version` reads
+  `OpenSSL 3.5.7` and `dpkg-query -W curl` reports it not installed.
+
 ## [2.2.0] - 2026-09-13
 
 Dependency realignment onto the published JWKS `kid`/key-binding release
