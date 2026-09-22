@@ -13,7 +13,18 @@ and the five service images now carry it byte-for-byte. Image-only patch
 release: no route, schema, contract or dependency change. `SERVICE_VERSION`
 (and `contracts/openapi.json`'s `info.version`) move to `2.2.1`;
 `CONTRACT_VERSION` stays `2.1.0` and `CONTRACT_RANGE` `>=2.1.0 <3.0.0`, so
-`@mano8/astro-prompt-m8`'s preflight admits this release unchanged.
+`@mano8/astro-prompt-m8`'s preflight admits this release unchanged. It also
+carries one repository-hygiene file that ships in no image (`B24`, below).
+
+### Added
+
+- **`docker_compose/dev_prompt_engine_m8/.gitignore`** (`B24-prompt-stack-gitignore`),
+  matching the sibling `dev_local_prompt_m8` stack's pattern, so everything
+  `init.sh` generates — `.env` copies, `keys/`, `traefik/certs/`, `db_data/`,
+  `redis/`, `shared_migrations/`, `prometheus/data/`, `grafana/data/` — is
+  ignored as it already is in every other stack in the fleet. It rides this
+  release rather than its own PR: its own PR (#41) was red on the `anyio`
+  advisory below, which lives on `main` and not in its one-file diff.
 
 ### Security
 
