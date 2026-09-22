@@ -18,6 +18,7 @@ from promt_engine_service.controllers.prompts import (
 )
 from promt_engine_service.db_models.prompts import (
     PromptBlock,
+    PromptBlockPublic,
     PromptBlocksExport,
     PromptBlocksPublic,
 )
@@ -101,7 +102,10 @@ def prompt_block_list(
             )
         statement = statement.offset(skip).limit(limit)
         return PromptBlocksPublic(
-            data=session.exec(statement).all(),
+            data=[
+                PromptBlockPublic.model_validate(row)
+                for row in session.exec(statement).all()
+            ],
             count=session.exec(count_statement).one(),
         )
     except HTTPException:
@@ -163,7 +167,9 @@ def prompt_block_export(
         rows = list(session.exec(statement).all())
         truncated = len(rows) > MAX_EXPORT_SIZE
         return PromptBlocksExport(
-            data=rows[:MAX_EXPORT_SIZE],
+            data=[
+                PromptBlockPublic.model_validate(row) for row in rows[:MAX_EXPORT_SIZE]
+            ],
             count=session.exec(count_statement).one(),
             truncated=truncated,
         )

@@ -16,6 +16,7 @@ from promt_engine_service.controllers.prompts import ListQueryController
 from promt_engine_service.db_models.categories import (
     Category,
     CategoryCreate,
+    CategoryPublic,
     CategoryUpdate,
     CategoriesPublic,
 )
@@ -82,7 +83,10 @@ async def read_root(
         statement = statement.offset(skip).limit(limit)
 
         return CategoriesPublic(
-            data=session.exec(statement).all(),
+            data=[
+                CategoryPublic.model_validate(row)
+                for row in session.exec(statement).all()
+            ],
             count=session.exec(count_statement).one(),
         )
     except Exception as ex:
