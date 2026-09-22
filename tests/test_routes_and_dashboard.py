@@ -508,10 +508,10 @@ def test_dashboard_range_activity_and_stats(session, owner, superuser) -> None:
 def test_dashboard_december_and_exception(monkeypatch, session, owner) -> None:
     class FixedDateTime:
         @classmethod
-        def now(cls):
+        def now(cls, tz=None):
             from datetime import datetime
 
-            return datetime(2026, 12, 15, 10, 30)
+            return datetime(2026, 12, 15, 10, 30, tzinfo=tz)
 
     monkeypatch.setattr(
         "promt_engine_service.controllers.dashboard.datetime",

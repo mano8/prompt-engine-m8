@@ -16,6 +16,37 @@ release: no route, schema, contract or dependency change. `SERVICE_VERSION`
 `@mano8/astro-prompt-m8`'s preflight admits this release unchanged. It also
 carries one repository-hygiene file that ships in no image (`B24`, below).
 
+### Fixed
+
+- **Dashboard activity bounds are timezone-aware UTC**
+  (`B27-dev-set-drift-repair`, finding `G20`).
+  `DashboardController.get_range_activity` built both bounds from a naive
+  `datetime.now()`, and every one of them is compared against the
+  `updated_at`/`created_at` columns of `Category`, `PromptBlock`,
+  `PromptTemplate` and `LLMProvider`. SQLAlchemy `2.0.54` rejects a naive
+  value at that boundary (*"Datetime values must have timezone
+  information"*), so `GET /prompt/dashboard/users/activity/` and
+  `.../current/` returned a handled `500` instead of their stats. The bounds
+  now come from `datetime.now(timezone.utc)`. Deliberately **not** fixed
+  with a `NaiveDatetime` annotation, which would have recorded the bug and
+  kept storing ambiguous local times. No schema, route or contract change —
+  the served values were always meant to be UTC instants.
+- **`GET /prompt-block/`, `GET /prompt-block/export/` and `GET /category/`
+  serialize through their declared public models.** Each passed raw ORM rows
+  (`PromptBlock`, `Category`) into a field declared
+  `list[PromptBlockPublic]` / `list[CategoryPublic]`. The table model and the
+  public model are siblings — neither is a subclass of the other — so the
+  declaration was never true; pydantic happened to coerce row-by-row at
+  runtime and `mypy` `2.3.1` with `sqlmodel` `0.0.46` now reports it. The
+  routes convert explicitly via `model_validate`, which is the idiom
+  `prompt_templates.py` already used (`dump_prompt_templates`). Responses are
+  byte-identical; `contracts/openapi.json` is unchanged.
+
+Both defects predate this release and predate `B23`: CI resolves
+`requirements_dev.txt`'s `>=` floors fresh on every run, and the library
+generation that resolved on 2026-09-22 stopped hiding them. Nothing in the
+shipped `requirements_prod.lock` changed as a result.
+
 ### Added
 
 - **`docker_compose/dev_prompt_engine_m8/.gitignore`** (`B24-prompt-stack-gitignore`),
