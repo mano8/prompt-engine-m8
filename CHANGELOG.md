@@ -45,7 +45,10 @@ carries one repository-hygiene file that ships in no image (`B24`, below).
 Both defects predate this release and predate `B23`: CI resolves
 `requirements_dev.txt`'s `>=` floors fresh on every run, and the library
 generation that resolved on 2026-09-22 stopped hiding them. Nothing in the
-shipped `requirements_prod.lock` changed as a result.
+shipped `requirements_prod.lock` changed as a result — the lock moves in
+this same release for a different reason (`B29`, under **Changed** below),
+and that move is what finally puts the tested generation and the shipped
+one on the same graph.
 
 ### Added
 
@@ -56,6 +59,35 @@ shipped `requirements_prod.lock` changed as a result.
   ignored as it already is in every other stack in the fleet. It rides this
   release rather than its own PR: its own PR (#41) was red on the `anyio`
   advisory below, which lives on `main` and not in its one-file diff.
+
+### Changed
+
+- **The shipped lock moves onto the library generation CI already tests
+  against** (`B29-align-shipped-library-generation`, finding `G22`). Every
+  service in the fleet was tested on a graph none of them shipped: CI installs
+  `requirements_dev.txt`'s `>=` floors, which resolve to the current
+  generation, while `promt_engine_service/requirements_prod.lock` pinned an
+  older one. The `B27` entry above is what that gap costs — two defects that
+  only the *tested* generation could see, in a release whose *shipped*
+  generation still could not. Three declared pins move, plus `pydantic-core`,
+  which is `pydantic`'s hard `==` peer. Regenerated with
+  `pip-compile --generate-hashes --no-emit-index-url --upgrade-package sqlalchemy==2.0.54 --upgrade-package sqlmodel==0.0.46 --upgrade-package pydantic==2.13.5`,
+  never a blanket `--upgrade`, so **no other line in the ~120-distribution
+  graph moves**. Read out of the images themselves:
+
+  | Package | Published `2.2.0` image | This release |
+  | --- | --- | --- |
+  | `sqlalchemy` | `2.0.51` | **`2.0.54`** |
+  | `sqlmodel` | `0.0.39` | **`0.0.46`** |
+  | `pydantic` | `2.13.4` | **`2.13.5`** |
+  | `pydantic-core` | `2.46.4` | **`2.46.5`** |
+
+  `sqlalchemy` `2.0.54` is the release whose timezone-aware boundary check
+  raised `B27`'s first defect, and `sqlmodel` `0.0.46` is what let `mypy`
+  report its second — both are now the generation this repository *ships*,
+  not only the one it is tested on. `test-shipped-lock`, which this
+  repository has and the rest of the fleet gains in this same step, runs the
+  full suite against exactly this set.
 
 ### Security
 
