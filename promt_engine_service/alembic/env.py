@@ -28,6 +28,7 @@ from sqlalchemy import engine_from_config, pool  # noqa: E402
 from sqlmodel import SQLModel  # noqa: E402
 
 from promt_engine_service.core.config import settings  # noqa: E402
+from promt_engine_service.core.utc_session import pin_utc_session  # noqa: E402
 import promt_engine_service.db_models  # noqa: E402, F401
 
 config = context.config
@@ -94,10 +95,14 @@ def run_migrations_online() -> None:
     )
     configuration["sqlalchemy.url"] = get_url()
 
-    connectable = engine_from_config(
-        configuration,
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
+    # A UTC session makes the timestamp -> timestamptz ALTER an autogenerate
+    # emits read existing naive rows as UTC instead of the server's zone (G23).
+    connectable = pin_utc_session(
+        engine_from_config(
+            configuration,
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool,
+        )
     )
 
     with connectable.connect() as connection:
