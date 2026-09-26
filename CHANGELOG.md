@@ -116,6 +116,12 @@ one on the same graph.
   not only the one it is tested on. `test-shipped-lock`, which this
   repository has and the rest of the fleet gains in this same step, runs the
   full suite against exactly this set.
+- **The dev stack pins the issuer release the fleet publishes with this one**
+  (`B32-pre-publish-pin-alignment`).
+  `dev_prompt_engine_m8/docker-compose.yml` moves
+  `tepochtli/fa-auth-m8:2.2.1` → `2.2.3`, which is pending publish, so the
+  `v2.2.1` tree names the issuer it ships beside. The stack pulls it once the
+  fleet's publish sweep reads `2.2.3` back.
 
 ### Security
 
