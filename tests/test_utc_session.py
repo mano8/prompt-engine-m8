@@ -10,6 +10,7 @@ server runs in ``fa-auth-m8``'s database-integration matrix.
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 from sqlalchemy import create_engine, event
@@ -43,10 +44,13 @@ class _Connection:
         return _Cursor(self)
 
 
-def test_the_service_engine_pins_its_sessions_to_utc() -> None:
+def test_the_service_engine_is_pinned() -> None:
+    # The suite may configure any dialect; the pin must be applied to the one
+    # engine deps.py builds and act exactly when that engine speaks PostgreSQL.
+    assert "pin_utc_session(engine._engine)" in inspect.getsource(deps)
     engine: Any = deps.engine._engine
-    assert engine.dialect.name == "postgresql"
-    assert event.contains(engine, "connect", set_session_utc)
+    registered = event.contains(engine, "connect", set_session_utc)
+    assert registered == (engine.dialect.name == "postgresql")
 
 
 def test_the_listener_sets_utc_outside_a_transaction() -> None:
@@ -62,6 +66,7 @@ def test_pinning_is_idempotent() -> None:
     engine = create_engine("postgresql+psycopg2://u:p@localhost/db")
     pin_utc_session(engine)
     pin_utc_session(engine)
+    assert event.contains(engine, "connect", set_session_utc)
     # One removal leaves nothing behind only if one registration was made.
     event.remove(engine, "connect", set_session_utc)
     assert not event.contains(engine, "connect", set_session_utc)
