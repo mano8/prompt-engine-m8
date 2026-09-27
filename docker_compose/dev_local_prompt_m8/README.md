@@ -5,12 +5,14 @@ Local dev stack for `prompt_engine_service` on the full hardened M8 platform:
 the async workers and infrastructure.
 
 Same hardened posture as the media hardened stack (PostgreSQL 18, two Redis
-instances (auth + media), MinIO, ClamAV, Traefik, Prometheus, Grafana,
+instances (auth + media), SeaweedFS S3 storage, ClamAV, Traefik, Prometheus, Grafana,
 RS256/JWKS auth, container hardening, network segmentation), with one developer
 convenience: **all application services are built from local source** (the
 sibling repos `../../../fa-auth-m8`, `../../../media-service-m8`,
 `../../../media-worker-m8`, and this repo) instead of pulling published images,
-and **MinIO is published on loopback** (`127.0.0.1:9005`/`9006`) for host access.
+and **the storage backend's S3 gateway is published on loopback**
+(`127.0.0.1:9005`) for host access. There is no console port: SeaweedFS's
+admin/filer surfaces stay loopback-bound inside the container.
 
 > For a lean prompt-only stack (just `auth_user_service` + `prompt_engine_service`,
 > no media/storage/scan/worker components), use
@@ -36,12 +38,12 @@ Browser / Frontend
        +--> PostgreSQL (media_db) on data_net
        +--> auth_user_service private API (HTTP introspection) for token revocation
        +--> Media Redis on data_net for queues/rate limits/cache
-       +--> MinIO on data_net
+       +--> Object storage (SeaweedFS S3) on data_net
 ```
 
 `app_net` is external-facing for Traefik, app services, and observability.
-`data_net` is internal and has no gateway; DB, Redis, and MinIO are not exposed
-through that network (MinIO additionally publishes loopback-only host ports for
+`data_net` is internal and has no gateway; DB, Redis, and storage are not exposed
+through that network (storage additionally publishes its S3 port on loopback for
 dev convenience).
 
 > **Token revocation:** consumers do **not** connect to the auth Redis. In
@@ -63,8 +65,10 @@ dev convenience).
 | m8_db | `postgres:18.4-alpine` | internal data network |
 | redis_cache | `redis:8.8.0-alpine` | auth Redis — internal data network |
 | media_redis_cache | `redis:8.8.0-alpine` | media Redis — internal data network |
-| minio | `quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z.hotfix.7aa24e772` | `127.0.0.1:9005` API, `127.0.0.1:9006` console |
-| minio-init | `quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z` | one-shot: buckets + `media-rw` policy |
+| storage-tls-init | `alpine:3.21.3` | one-shot: mints the S3 gRPC mTLS certificate, then destroys the CA key |
+| storage-config | `alpine:3.21.3` | one-shot: writes the backend's static identity table before it boots |
+| storage | `chrislusf/seaweedfs:4.45` | `127.0.0.1:9005` S3 gateway — admin/filer surfaces loopback-bound inside the container |
+| storage-init | `amazon/aws-cli:2.36.40` | one-shot: creates the five buckets + pins per-bucket CORS |
 | prometheus | `ubuntu/prometheus:3.11-26.04_stable` | `127.0.0.1:9090` |
 | grafana | `grafana/grafana:13.1.0-25530058790` | `127.0.0.1:3000` |
 
@@ -101,8 +105,9 @@ PROMPT_DB_PASSWORD=<prompt-db-password>
 PROMPT_DB_NAME=prompt_engine_db
 REDIS_PASSWORD=<auth-redis-password>
 MEDIA_REDIS_PASSWORD=<media-redis-password>
-MINIO_ROOT_USER=<minio-root-user>
-MINIO_ROOT_PASSWORD=<minio-root-password>
+S3_ROOT_USER=<storage-admin-access-key>
+S3_ROOT_PASSWORD=<storage-admin-secret-key>
+S3_CORS_ALLOW_ORIGIN=http://localhost:4321,http://localhost:5173,http://localhost:9000
 ```
 
 `init-db.sh` provisions a per-service PostgreSQL user + database from each
@@ -111,7 +116,7 @@ generic `DB_USER` / `DB_PASSWORD` / `DB_DATABASE` names in its own env file:
 
 - `auth.env` → `AUTH_DB_*`, plus `REDIS_PASSWORD` to match `.env` (only
   `auth_user_service` connects to the auth Redis).
-- `media.env` → `MEDIA_DB_*`, plus the `MEDIA_REDIS_*` and `MINIO_*` values.
+- `media.env` → `MEDIA_DB_*`, plus the `MEDIA_REDIS_*` and `S3_*` values.
 - `prompt.env` → `PROMPT_DB_*`:
 
   ```ini
@@ -120,9 +125,12 @@ generic `DB_USER` / `DB_PASSWORD` / `DB_DATABASE` names in its own env file:
   DB_PASSWORD=<same-as-PROMPT_DB_PASSWORD>
   ```
 
-The `minio-init` one-shot provisions a MinIO user from `media.env`'s
-`MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` (the media-rw credentials, not the MinIO
-root user). `prompt_engine_service` uses no object storage.
+The `storage-config` one-shot writes the backend's identity table from
+`media.env`'s `S3_ACCESS_KEY` / `S3_SECRET_KEY` **before** the backend boots
+(SeaweedFS has no bootstrap-time user-creation API), so they become the scoped
+`media-rw` identity, not the storage admin (`S3_ROOT_USER` in `.env`).
+`storage-init` then creates the five buckets with CORS pinned to
+`S3_CORS_ALLOW_ORIGIN`. `prompt_engine_service` uses no object storage.
 
 ### Secure-by-default settings (auth-sdk-m8 2.1.1)
 
@@ -178,7 +186,7 @@ docker compose up -d --build
 | Traefik dashboard | `http://localhost:8080` |
 | Prometheus | `http://localhost:9090` |
 | Grafana | `http://localhost:3000` |
-| MinIO console | `http://127.0.0.1:9006` |
+| Storage S3 gateway | `http://127.0.0.1:9005` |
 
 ## Observability
 
@@ -198,8 +206,11 @@ Grafana uses the local Prometheus datasource; default credentials come from
 
 - `.env` is infrastructure/bootstrap config. It provisions `AUTH_DB_*`,
   `MEDIA_DB_*`, and `PROMPT_DB_*` through `../shared/db_init/init-db.sh`, and
-  supplies the Redis and MinIO root passwords used by `redis_cache`,
-  `media_redis_cache`, and `minio` via Compose interpolation.
+  supplies the Redis and storage admin credentials used by `redis_cache`,
+  `media_redis_cache`, and the storage-bootstrap services via Compose
+  interpolation. `storage` itself reads its identities from
+  `seaweedfs/config/s3.json`, which `storage-config` generates (gitignored — it
+  carries both credentials verbatim).
 - `auth.env`, `media.env`, and `prompt.env` are runtime application configs
   consumed by `fastapi-m8` / `auth-sdk-m8`. They use generic `DB_DATABASE`,
   `DB_USER`, `DB_PASSWORD` — do **not** replace those with the `*_DB_*` names.
@@ -262,3 +273,30 @@ DB init will not rerun unless you reset it.
 
 **Prometheus prompt target is down**: check `prompt_engine_service` logs and
 confirm `/prompt/metrics` is enabled with `METRICS_ENABLED=true`.
+
+<!-- env-files:start -->
+## Environment files
+
+Copy each template to the name after the arrow (`init.sh` does this where the stack has one), then replace every
+`changethis`. Every key is documented in its template; each secret carries a `# Value:` line with its minimum
+and maximum length and allowed characters. Real env files are gitignored and never committed.
+
+| Template → file | Read by | Must be set (placeholders) |
+| --- | --- | --- |
+| `.env.example` → `.env` | Compose itself (`${VAR}` interpolation) and the engine init scripts | `DB_PASSWORD`, `AUTH_DB_USER`, `AUTH_DB_PASSWORD`, `MEDIA_DB_USER`, `MEDIA_DB_PASSWORD`, `PROMPT_DB_USER`, `PROMPT_DB_PASSWORD`, `REDIS_PASSWORD`, `MEDIA_REDIS_PASSWORD`, `S3_ROOT_USER`, `S3_ROOT_PASSWORD` |
+| `auth.env.example` → `auth.env` | `auth_user_service` | `DB_USER`, `DB_PASSWORD`, `REDIS_PASSWORD`, `ACCESS_KEY_ID`, `REFRESH_SECRET_KEY`, `FIRST_SUPERUSER_PASSWORD`, `PRIVATE_API_SECRET`, `SESSION_SECRET`, `TOKENS_ENCRYPTION_KEY`, `EVENT_SIGNING_KEY` |
+| `grafana.env.example` → `grafana.env` | `grafana` | `GF_SECURITY_ADMIN_PASSWORD` |
+| `media.env.example` → `media.env` | `media_service`, `media_service_worker`, `storage-config`, `storage-init` | `DB_USER`, `DB_PASSWORD`, `MEDIA_REDIS_PASSWORD`, `MEDIA_INTERNAL_SERVICE_TOKEN`, `MEDIA_SHARE_SIGNING_SECRET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `REFRESH_SECRET_KEY`, `PRIVATE_API_SECRET`, `EVENT_SIGNING_KEY` |
+| `prompt.env.example` → `prompt.env` | `prompt_engine_service` | `DB_USER`, `DB_PASSWORD`, `REFRESH_SECRET_KEY`, `PRIVATE_API_SECRET`, `EVENT_SIGNING_KEY` |
+| `test.env.example` → `test.env` | the live security tests (`shared_live_tests`), not a container | `LIVE_TEST_ADMIN_EMAIL`, `LIVE_TEST_ADMIN_PASSWORD`, `LIVE_TEST_PRIVATE_API_SECRET`, `LIVE_TEST_REFRESH_SECRET_KEY` |
+| `worker.env.example` → `worker.env` | `media_worker` | `MEDIA_INTERNAL_SERVICE_TOKEN`, `MEDIA_REDIS_PASSWORD`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` |
+
+Generate a value that satisfies every secret rule (48 chars: upper, lower, digit and `-`):
+
+```sh
+python -c "import secrets,string; a=string.ascii_letters+string.digits; print('Aa1-'+''.join(secrets.choice(a) for _ in range(44)))"
+```
+
+Values must avoid spaces, `$`, `#`, quotes and backslashes: Compose interpolates `$`, dotenv treats `#` as a
+comment, and several values are embedded in URLs, JSON or the Redis ACL.
+<!-- env-files:end -->

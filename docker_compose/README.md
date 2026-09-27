@@ -9,7 +9,7 @@ Docker Compose examples for prompt-engine-m8.
   Grafana. Adapted from media-service-m8's hardened compose pattern with the
   media-only storage, ClamAV, and worker services removed.
 - [`dev_local_prompt_m8`](dev_local_prompt_m8) — full combined platform stack:
-  everything above **plus** `media-service-m8`, its workers, media Redis, MinIO,
+  everything above **plus** `media-service-m8`, its workers, media Redis, SeaweedFS S3 storage,
   and ClamAV, so `prompt_engine_service` runs beside the media service on one
   hardened stack. All application services are built from local sibling repos.
 - [`shared_live_tests`](shared_live_tests) — reusable `security-tests-m8` live
